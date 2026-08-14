@@ -10,19 +10,35 @@ describe('TodoStore', () => {
   let store: TodoStore;
 
   beforeEach(() => {
-    api = jasmine.createSpyObj<TodoApiService>('TodoApiService', ['list', 'create', 'update', 'delete']);
-    api.list.and.returnValue(of([
+    api = jasmine.createSpyObj<TodoApiService>('TodoApiService', [
+      'listTodoLists',
+      'createTodoList',
+      'updateTodoList',
+      'deleteTodoList',
+      'listTodos',
+      'createTodo',
+      'updateTodo',
+      'deleteTodo'
+    ]);
+    api.listTodoLists.and.returnValue(of([
+      { id: 'list-1', title: 'Inbox' },
+      { id: 'list-2', title: 'Work' }
+    ]));
+    api.listTodos.and.returnValue(of([
       { id: '1', title: 'Open task', completed: false },
       { id: '2', title: 'Done task', completed: true }
     ]));
-    api.create.and.callFake((title: string) => of({ id: '3', title, completed: false }));
-    api.update.and.callFake((id: string, changes: TodoChanges) => {
+    api.createTodoList.and.callFake((title: string) => of({ id: 'list-3', title }));
+    api.updateTodoList.and.callFake((id: string, title: string) => of({ id, title }));
+    api.deleteTodoList.and.returnValue(of(undefined));
+    api.createTodo.and.callFake((_listId: string, title: string) => of({ id: '3', title, completed: false }));
+    api.updateTodo.and.callFake((_listId: string, id: string, changes: TodoChanges) => {
       const existing = id === '1'
         ? { id: '1', title: 'Open task', completed: false }
         : { id: '2', title: 'Done task', completed: true };
       return of({ ...existing, ...changes });
     });
-    api.delete.and.returnValue(of(undefined));
+    api.deleteTodo.and.returnValue(of(undefined));
 
     TestBed.configureTestingModule({
       providers: [
@@ -34,9 +50,15 @@ describe('TodoStore', () => {
     store = TestBed.inject(TodoStore);
   });
 
-  it('loads and filters todos', () => {
+  it('loads todo lists, selects the first list, and filters its todos', () => {
     store.loadTodos();
 
+    expect(store.todoLists()).toEqual([
+      { id: 'list-1', title: 'Inbox' },
+      { id: 'list-2', title: 'Work' }
+    ]);
+    expect(store.selectedListId()).toBe('list-1');
+    expect(api.listTodos).toHaveBeenCalledWith('list-1');
     expect(store.todos()).toEqual([
       { id: '1', title: 'Open task', completed: false },
       { id: '2', title: 'Done task', completed: true }
@@ -46,7 +68,58 @@ describe('TodoStore', () => {
     expect(store.visibleTodos()).toEqual([{ id: '1', title: 'Open task', completed: false }]);
   });
 
+  it('selects a list and loads only its todos', () => {
+    api.listTodos.withArgs('list-2').and.returnValue(of([{ id: '4', title: 'Work task', completed: false }]));
+
+    store.loadTodos();
+    store.selectTodoList('list-2');
+
+    expect(store.selectedListId()).toBe('list-2');
+    expect(store.todos()).toEqual([{ id: '4', title: 'Work task', completed: false }]);
+  });
+
+  it('creates, renames, and deletes todo lists', () => {
+    store.loadTodos();
+
+    store.setNewListTitle('  Errands  ');
+    store.createTodoList();
+
+    expect(api.createTodoList).toHaveBeenCalledWith('Errands');
+    expect(store.todoLists()).toContain(jasmine.objectContaining({ id: 'list-3', title: 'Errands' }));
+    expect(store.selectedListId()).toBe('list-3');
+    expect(store.newListTitle()).toBe('');
+
+    store.startEditingTodoList({ id: 'list-3', title: 'Errands' });
+    store.setEditListTitle('  Home  ');
+    store.saveTodoListEdit();
+
+    expect(api.updateTodoList).toHaveBeenCalledWith('list-3', 'Home');
+    expect(store.todoLists()).toContain(jasmine.objectContaining({ id: 'list-3', title: 'Home' }));
+
+    store.deleteTodoList('list-3');
+
+    expect(api.deleteTodoList).toHaveBeenCalledWith('list-3');
+    expect(store.todoLists()).toEqual([
+      { id: 'list-1', title: 'Inbox' },
+      { id: 'list-2', title: 'Work' }
+    ]);
+    expect(store.selectedListId()).toBe('list-1');
+  });
+
+  it('supports deleting the last todo list and leaves an empty app state', () => {
+    api.listTodoLists.and.returnValue(of([{ id: 'list-1', title: 'Inbox' }]));
+    store.loadTodos();
+
+    store.deleteTodoList('list-1');
+
+    expect(store.todoLists()).toEqual([]);
+    expect(store.selectedListId()).toBeNull();
+    expect(store.todos()).toEqual([]);
+  });
+
   it('validates and creates todos', () => {
+    store.loadTodos();
+
     store.setNewTitle('   ');
     store.createTodo();
 
@@ -55,20 +128,27 @@ describe('TodoStore', () => {
     store.setNewTitle('  New task  ');
     store.createTodo();
 
-    expect(store.todos()).toEqual([{ id: '3', title: 'New task', completed: false }]);
+    expect(api.createTodo).toHaveBeenCalledWith('list-1', 'New task');
+    expect(store.todos()).toEqual([
+      { id: '1', title: 'Open task', completed: false },
+      { id: '2', title: 'Done task', completed: true },
+      { id: '3', title: 'New task', completed: false }
+    ]);
     expect(store.newTitle()).toBe('');
     expect(store.errorMessage()).toBeNull();
   });
 
   it('tracks pending toggles and ignores duplicate toggle requests', () => {
     const pendingUpdate = new Subject<Todo>();
-    api.update.and.returnValue(pendingUpdate.asObservable());
+    api.updateTodo.and.returnValue(pendingUpdate.asObservable());
     const todo = { id: '1', title: 'Open task', completed: false };
 
+    store.loadTodos();
+
     store.toggleTodo(todo);
     store.toggleTodo(todo);
 
-    expect(api.update).toHaveBeenCalledOnceWith('1', { completed: true });
+    expect(api.updateTodo).toHaveBeenCalledOnceWith('list-1', '1', { completed: true });
     expect(store.isTogglePending('1')).toBeTrue();
 
     pendingUpdate.next({ id: '1', title: 'Open task', completed: true });
@@ -117,7 +197,7 @@ describe('TodoStore', () => {
 
     store.saveEditAndMove('next');
 
-    expect(api.update).toHaveBeenCalledWith('1', { title: 'Saved first task' });
+    expect(api.updateTodo).toHaveBeenCalledWith('list-1', '1', { title: 'Saved first task' });
     expect(store.todos()).toContain(jasmine.objectContaining({ id: '1', title: 'Saved first task' }));
     expect(store.editingId()).toBe('2');
     expect(store.editTitle()).toBe('Done task');
@@ -130,14 +210,14 @@ describe('TodoStore', () => {
 
     store.saveEditAndMove('previous');
 
-    expect(api.update).toHaveBeenCalledWith('1', { title: 'Top saved task' });
+    expect(api.updateTodo).toHaveBeenCalledWith('list-1', '1', { title: 'Top saved task' });
     expect(store.editingId()).toBe('2');
     expect(store.editTitle()).toBe('Done task');
 
     store.setEditTitle('Bottom saved task');
     store.saveEditAndMove('next');
 
-    expect(api.update).toHaveBeenCalledWith('2', { title: 'Bottom saved task' });
+    expect(api.updateTodo).toHaveBeenCalledWith('list-1', '2', { title: 'Bottom saved task' });
     expect(store.editingId()).toBe('1');
     expect(store.editTitle()).toBe('Top saved task');
   });
@@ -159,7 +239,7 @@ describe('TodoStore', () => {
   }));
 
   it('stores API error messages', () => {
-    api.list.and.returnValue(throwError(() => ({ error: { message: 'Could not reach API' } })));
+    api.listTodoLists.and.returnValue(throwError(() => ({ error: { message: 'Could not reach API' } })));
 
     store.loadTodos();
 

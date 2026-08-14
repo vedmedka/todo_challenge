@@ -59,6 +59,14 @@ export class AppComponent implements OnInit, OnDestroy {
     this.store.saveEditAndMove(direction);
   }
 
+  confirmDeleteTodoList(id: string): void {
+    if (!window.confirm('Delete this list and all todos in it?')) {
+      return;
+    }
+
+    this.store.deleteTodoList(id);
+  }
+
   private scheduleEditInputFocus(editingId: string): void {
     if (this.focusTimer) {
       clearTimeout(this.focusTimer);

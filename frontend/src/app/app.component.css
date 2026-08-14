@@ -1,19 +1,54 @@
 .todo-shell {
   min-height: 100vh;
   display: grid;
-  place-items: start center;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 720px);
+  justify-content: center;
+  align-items: start;
+  gap: 20px;
   padding: 48px 16px;
   box-sizing: border-box;
 }
 
+.list-sidebar,
 .todo-panel {
-  width: min(720px, 100%);
   background: #ffffff;
   border: 1px solid #dfe3ea;
   border-radius: 8px;
   box-shadow: 0 18px 40px rgb(30 39 54 / 10%);
   padding: 28px;
   box-sizing: border-box;
+}
+
+.todo-panel {
+  width: 100%;
+}
+
+.list-sidebar {
+  width: 100%;
+}
+
+.list-sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.list-sidebar h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.list-count {
+  min-width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #eef2f7;
+  color: #20242c;
+  font-weight: 700;
 }
 
 .todo-header {
@@ -47,6 +82,7 @@ h1 {
   font-weight: 700;
 }
 
+.new-list,
 .new-todo {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -54,6 +90,7 @@ h1 {
 }
 
 input[type="text"],
+.list-edit-input,
 .edit-input {
   min-width: 0;
   border: 1px solid #cfd6e1;
@@ -61,6 +98,62 @@ input[type="text"],
   padding: 10px 12px;
   color: #20242c;
   background: #ffffff;
+}
+
+.todo-lists {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+}
+
+.todo-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #e3e7ee;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.todo-list-item.selected {
+  border-color: #1f6f4a;
+  background: #f1fbf6;
+}
+
+.list-title-button {
+  grid-column: 1 / -1;
+  min-width: 0;
+  justify-self: stretch;
+  border-color: transparent;
+  background: transparent;
+  color: #20242c;
+  padding: 6px 4px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.list-title-button.active {
+  background: transparent;
+  border-color: transparent;
+  color: #1f6f4a;
+  font-weight: 700;
+}
+
+.list-title-button:hover,
+.list-title-button:focus-visible {
+  background: #eef2f7;
+}
+
+.list-edit-input {
+  grid-column: 1 / -1;
+}
+
+.list-action {
+  padding: 8px 10px;
 }
 
 button {
@@ -178,13 +271,16 @@ button:disabled {
 @media (max-width: 560px) {
   .todo-shell {
     padding: 16px;
+    grid-template-columns: 1fr;
   }
 
   .todo-panel {
     padding: 18px;
   }
 
+  .new-list,
   .new-todo,
+  .todo-list-item,
   .todo-item {
     grid-template-columns: 1fr;
   }

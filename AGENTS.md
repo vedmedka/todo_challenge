@@ -6,9 +6,9 @@ This repository contains a containerized TODO application split into two modules
 
 - `backend/`: Java 25 Spring Boot 4.1 REST API using Maven. Source lives in `backend/src/main/java`, tests in `backend/src/test/java`.
 - `frontend/`: Angular 21 application. App source lives in `frontend/src/app`, browser entry files in `frontend/src`, and Playwright e2e tests in `frontend/e2e`.
-- `docker-compose.yml`: starts backend and frontend containers.
+- `docker-compose.yml`: starts PostgreSQL, backend, and frontend containers.
 
-The backend stores todos in memory with `ConcurrentHashMap`; state resets when the backend container restarts.
+The backend stores todo lists and todos in PostgreSQL through Spring JDBC repositories. State survives backend and database container restarts until the `todo-postgres-data` Docker volume is removed.
 
 ## Build, Test, and Development Commands
 

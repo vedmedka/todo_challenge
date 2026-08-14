@@ -19,11 +19,14 @@ class TodoRepositoryTest {
     private TodoRepository repository;
 
     @Autowired
+    private TodoListRepository todoListRepository;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void clearTodos() {
-        jdbcTemplate.update("truncate table todos");
+        jdbcTemplate.update("truncate table todo_lists cascade");
     }
 
     @AfterEach
@@ -33,40 +36,88 @@ class TodoRepositoryTest {
 
     @Test
     void storesAndReadsTodosFromDatabase() {
+        UUID listId = createList("Work");
         Todo first = new Todo(UUID.randomUUID(), "Write migration", false);
         Todo second = new Todo(UUID.randomUUID(), "Add repository", true);
 
-        repository.create(first);
-        repository.create(second);
+        repository.create(listId, first);
+        repository.create(listId, second);
 
-        assertThat(repository.findById(first.id())).contains(first);
-        assertThat(repository.findAll()).containsExactlyInAnyOrder(first, second);
+        assertThat(repository.findById(listId, first.id())).contains(first);
+        assertThat(repository.findAll(listId)).containsExactlyInAnyOrder(first, second);
     }
 
     @Test
-    void deletesTodosInDatabase() {
-        UUID id = UUID.randomUUID();
-        repository.create(new Todo(id, "Draft", false));
+    void scopesTodosByListInDatabase() {
+        UUID firstListId = createList("Work");
+        UUID secondListId = createList("Home");
+        Todo first = new Todo(UUID.randomUUID(), "Shared title", false);
+        Todo second = new Todo(UUID.randomUUID(), "Shared title", true);
 
-        assertThat(repository.delete(id)).isTrue();
-        assertThat(repository.findById(id)).isEqualTo(Optional.empty());
+        repository.create(firstListId, first);
+        repository.create(secondListId, second);
+
+        assertThat(repository.findAll(firstListId)).containsExactly(first);
+        assertThat(repository.findAll(secondListId)).containsExactly(second);
+        assertThat(repository.findById(firstListId, second.id())).isEqualTo(Optional.empty());
+    }
+
+    @Test
+    void deletesTodosInDatabaseWithinTheirList() {
+        UUID listId = createList("Work");
+        UUID id = UUID.randomUUID();
+        repository.create(listId, new Todo(id, "Draft", false));
+
+        assertThat(repository.delete(listId, id)).isTrue();
+        assertThat(repository.findById(listId, id)).isEqualTo(Optional.empty());
     }
 
     @Test
     void patchesOnlyProvidedFieldsInDatabase() {
+        UUID listId = createList("Work");
         UUID id = UUID.randomUUID();
-        repository.create(new Todo(id, "Original", false));
+        repository.create(listId, new Todo(id, "Original", false));
 
-        assertThat(repository.patch(id, new TodoPatch(null, true))).contains(new Todo(id, "Original", true));
-        assertThat(repository.patch(id, new TodoPatch("Edited", null))).contains(new Todo(id, "Edited", true));
-        assertThat(repository.patch(UUID.randomUUID(), new TodoPatch("Missing", true))).isEqualTo(Optional.empty());
+        assertThat(repository.patch(listId, id, new TodoPatch(null, true))).contains(new Todo(id, "Original", true));
+        assertThat(repository.patch(listId, id, new TodoPatch("Edited", null))).contains(new Todo(id, "Edited", true));
+        assertThat(repository.patch(listId, UUID.randomUUID(), new TodoPatch("Missing", true))).isEqualTo(Optional.empty());
     }
 
     @Test
     void reportsMissingRowsWithoutCreatingThem() {
+        UUID listId = createList("Work");
         UUID missingId = UUID.randomUUID();
 
-        assertThat(repository.delete(missingId)).isFalse();
-        assertThat(repository.findAll()).isEqualTo(List.of());
+        assertThat(repository.delete(listId, missingId)).isFalse();
+        assertThat(repository.findAll(listId)).isEqualTo(List.of());
+    }
+
+    @Test
+    void storesUpdatesAndDeletesTodoListsInDatabase() {
+        TodoList list = new TodoList(UUID.randomUUID(), "Work");
+
+        todoListRepository.create(list);
+
+        assertThat(todoListRepository.findAll()).containsExactly(list);
+        assertThat(todoListRepository.patch(list.id(), "Home")).contains(new TodoList(list.id(), "Home"));
+        assertThat(todoListRepository.delete(list.id())).isTrue();
+        assertThat(todoListRepository.findById(list.id())).isEqualTo(Optional.empty());
+    }
+
+    @Test
+    void deletingTodoListCascadesItsTodos() {
+        UUID listId = createList("Work");
+        Todo todo = new Todo(UUID.randomUUID(), "Draft", false);
+        repository.create(listId, todo);
+
+        assertThat(todoListRepository.delete(listId)).isTrue();
+
+        assertThat(repository.findAll(listId)).isEqualTo(List.of());
+    }
+
+    private UUID createList(String title) {
+        TodoList list = new TodoList(UUID.randomUUID(), title);
+        todoListRepository.create(list);
+        return list.id();
     }
 }

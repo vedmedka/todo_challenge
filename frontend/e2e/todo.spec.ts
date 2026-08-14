@@ -12,16 +12,16 @@ test('manages todos through the simple list UI', async ({ page }) => {
 
   await page.goto('/');
 
-  await page.getByRole('button', { name: 'Add' }).click();
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(page.getByText('Title is required')).toBeVisible();
 
   await page.getByLabel('New todo title').fill(firstTitle);
-  await page.getByRole('button', { name: 'Add' }).click();
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
   const todo = page.getByTestId('todo-item').filter({ hasText: firstTitle });
   await expect(todo).toBeVisible();
 
   await page.getByLabel('New todo title').fill(secondTitle);
-  await page.getByRole('button', { name: 'Add' }).click();
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
   const secondTodo = page.getByTestId('todo-item').filter({ hasText: secondTitle });
   await expect(secondTodo).toBeVisible();
 
@@ -43,7 +43,7 @@ test('manages todos through the simple list UI', async ({ page }) => {
 
   await todo.getByRole('button', { name: firstTitle }).click();
   await page.getByLabel('Edit todo title').fill(blurSavedTitle);
-  await page.getByRole('heading', { name: 'TODO' }).click();
+  await page.getByRole('heading', { name: /Inbox|TODO/ }).click();
   await expect(page.getByText(blurSavedTitle)).toBeVisible();
 
   await page.getByRole('button', { name: 'All' }).click();
@@ -69,4 +69,53 @@ test('manages todos through the simple list UI', async ({ page }) => {
   await page.getByRole('button', { name: 'All' }).click();
   await page.getByTestId('todo-item').filter({ hasText: finalTitle }).getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByText(finalTitle)).toBeHidden();
+});
+
+test('manages multiple todo lists', async ({ page }) => {
+  const suffix = Date.now().toString();
+  const errandsList = `Errands ${suffix}`;
+  const workList = `Work ${suffix}`;
+  const renamedList = `Personal ${suffix}`;
+  const errandsTodo = `Buy batteries ${suffix}`;
+  const workTodo = `Prepare notes ${suffix}`;
+
+  await page.goto('/');
+
+  await page.getByLabel('New todo list title').fill(errandsList);
+  await page.getByRole('button', { name: 'Add list' }).click();
+  await expect(page.getByRole('heading', { name: errandsList })).toBeVisible();
+
+  await page.getByLabel('New todo title').fill(errandsTodo);
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.getByTestId('todo-item').filter({ hasText: errandsTodo })).toBeVisible();
+
+  await page.getByLabel('New todo list title').fill(workList);
+  await page.getByRole('button', { name: 'Add list' }).click();
+  await expect(page.getByRole('heading', { name: workList })).toBeVisible();
+  await expect(page.getByText(errandsTodo)).toBeHidden();
+
+  await page.getByLabel('New todo title').fill(workTodo);
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.getByTestId('todo-item').filter({ hasText: workTodo })).toBeVisible();
+
+  await page.getByRole('button', { name: errandsList }).click();
+  await expect(page.getByRole('heading', { name: errandsList })).toBeVisible();
+  await expect(page.getByText(errandsTodo)).toBeVisible();
+  await expect(page.getByText(workTodo)).toBeHidden();
+
+  await page.getByTestId('todo-list-item')
+    .filter({ hasText: errandsList })
+    .getByRole('button', { name: 'Rename' })
+    .click();
+  await page.getByLabel('Edit todo list title').fill(renamedList);
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: renamedList })).toBeVisible();
+
+  page.on('dialog', dialog => dialog.accept());
+  await page.getByTestId('todo-list-item')
+    .filter({ hasText: renamedList })
+    .getByRole('button', { name: 'Delete list' })
+    .click();
+  await expect(page.getByTestId('todo-list-item').filter({ hasText: renamedList })).toBeHidden();
+  await expect(page.getByText(errandsTodo)).toBeHidden();
 });

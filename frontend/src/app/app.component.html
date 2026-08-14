@@ -1,38 +1,116 @@
 <main class="todo-shell">
+  <aside class="list-sidebar" aria-label="Todo lists">
+    <header class="list-sidebar-header">
+      <h2>Lists</h2>
+      <span class="list-count">{{ store.todoLists().length }}</span>
+    </header>
+
+    <form class="new-list" (submit)="$event.preventDefault(); store.createTodoList()">
+      <label class="sr-only" for="new-list-title">New todo list title</label>
+      <input
+        id="new-list-title"
+        type="text"
+        [value]="store.newListTitle()"
+        (input)="store.setNewListTitle($any($event.target).value)"
+        placeholder="Add a list"
+        autocomplete="off"
+      >
+      <button type="submit">Add list</button>
+    </form>
+
+    <ul class="todo-lists" aria-label="Todo lists">
+      @for (list of store.todoLists(); track list.id) {
+        <li
+          class="todo-list-item"
+          data-testid="todo-list-item"
+          [class.selected]="store.selectedListId() === list.id"
+        >
+          @if (store.editingListId() === list.id) {
+            <label class="sr-only" for="edit-list-title">Edit todo list title</label>
+            <input
+              id="edit-list-title"
+              class="list-edit-input"
+              type="text"
+              [value]="store.editListTitle()"
+              (input)="store.setEditListTitle($any($event.target).value)"
+              (keydown.enter)="store.saveTodoListEdit()"
+              (keydown.escape)="store.cancelTodoListEdit()"
+              autocomplete="off"
+            >
+          } @else {
+            <button
+              type="button"
+              class="list-title-button"
+              [class.active]="store.selectedListId() === list.id"
+              (click)="store.selectTodoList(list.id)"
+            >
+              {{ list.title }}
+            </button>
+          }
+
+          <button
+            type="button"
+            class="secondary list-action"
+            (click)="store.startEditingTodoList(list)"
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            class="danger list-action"
+            [disabled]="store.isListDeletePending(list.id)"
+            (click)="confirmDeleteTodoList(list.id)"
+          >
+            Delete list
+          </button>
+        </li>
+      } @empty {
+        <li class="empty">No lists</li>
+      }
+    </ul>
+  </aside>
+
   <section class="todo-panel" aria-labelledby="todo-title">
     <header class="todo-header">
       <div>
         <p class="eyebrow">Container TODO</p>
-        <h1 id="todo-title">TODO</h1>
+        <h1 id="todo-title">{{ store.selectedTodoList()?.title ?? 'TODO' }}</h1>
       </div>
       <span class="count">{{ store.todos().length }}</span>
     </header>
 
-    <form class="new-todo" (submit)="$event.preventDefault(); store.createTodo()">
-      <label class="sr-only" for="new-title">New todo title</label>
-      <input
-        id="new-title"
-        type="text"
-        [value]="store.newTitle()"
-        (input)="store.setNewTitle($any($event.target).value)"
-        placeholder="Add a task"
-        autocomplete="off"
-      >
-      <button type="submit">Add</button>
-    </form>
+    @if (store.selectedListId()) {
+      <form class="new-todo" (submit)="$event.preventDefault(); store.createTodo()">
+        <label class="sr-only" for="new-title">New todo title</label>
+        <input
+          id="new-title"
+          type="text"
+          [value]="store.newTitle()"
+          (input)="store.setNewTitle($any($event.target).value)"
+          placeholder="Add a task"
+          autocomplete="off"
+        >
+        <button type="submit">Add</button>
+      </form>
+    }
 
     @if (store.errorMessage(); as message) {
       <p class="error" role="alert">{{ message }}</p>
     }
 
-    <div class="filters" aria-label="Todo filters">
-      <button type="button" [class.active]="store.filter() === 'all'" (click)="store.setFilter('all')">All</button>
-      <button type="button" [class.active]="store.filter() === 'active'" (click)="store.setFilter('active')">Active</button>
-      <button type="button" [class.active]="store.filter() === 'completed'" (click)="store.setFilter('completed')">Completed</button>
-    </div>
+    @if (store.selectedListId()) {
+      <div class="filters" aria-label="Todo filters">
+        <button type="button" [class.active]="store.filter() === 'all'" (click)="store.setFilter('all')">All</button>
+        <button type="button" [class.active]="store.filter() === 'active'" (click)="store.setFilter('active')">Active</button>
+        <button type="button" [class.active]="store.filter() === 'completed'" (click)="store.setFilter('completed')">Completed</button>
+      </div>
+    }
 
     <ul class="todo-list" aria-label="Todos">
-      @for (todo of store.visibleTodos(); track store.trackTodo($index, todo)) {
+      @if (!store.selectedListId()) {
+        <li class="empty">No list selected</li>
+      } @else {
+        @for (todo of store.visibleTodos(); track store.trackTodo($index, todo)) {
         <li
           class="todo-item"
           data-testid="todo-item"
@@ -91,8 +169,9 @@
             </button>
           }
         </li>
-      } @empty {
-        <li class="empty">No todos</li>
+        } @empty {
+          <li class="empty">No todos</li>
+        }
       }
     </ul>
   </section>

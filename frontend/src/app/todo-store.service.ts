@@ -2,7 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { finalize } from 'rxjs';
 
 import { TodoApiService } from './todo-api.service';
-import { Todo, TodoChanges, TodoFilter } from './todo.model';
+import { Todo, TodoChanges, TodoFilter, TodoList } from './todo.model';
 import { extractTodoErrorMessage, filterTodos } from './todo-utils';
 
 const TODO_EXIT_ANIMATION_MS = 180;
@@ -14,41 +14,182 @@ export class TodoStore {
   private readonly todoApi = inject(TodoApiService);
   private readonly exitTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  readonly newListTitle = signal('');
   readonly newTitle = signal('');
+  readonly editListTitle = signal('');
   readonly editTitle = signal('');
+  readonly todoLists = signal<TodoList[]>([]);
+  readonly selectedListId = signal<string | null>(null);
   readonly todos = signal<Todo[]>([]);
   readonly filter = signal<TodoFilter>('all');
   readonly errorMessage = signal<string | null>(null);
+  readonly editingListId = signal<string | null>(null);
   readonly editingId = signal<string | null>(null);
+  readonly pendingListDeleteIds = signal<ReadonlySet<string>>(new Set<string>());
   readonly pendingToggleIds = signal<ReadonlySet<string>>(new Set<string>());
   readonly pendingDeleteIds = signal<ReadonlySet<string>>(new Set<string>());
   readonly exitingTodoIds = signal<ReadonlySet<string>>(new Set<string>());
 
+  readonly selectedTodoList = computed(() => {
+    const selectedListId = this.selectedListId();
+    return this.todoLists().find(list => list.id === selectedListId) ?? null;
+  });
   readonly visibleTodos = computed(() => filterTodos(this.todos(), this.filter()));
 
   loadTodos(): void {
-    this.todoApi.list().subscribe({
-      next: todos => this.todos.set(todos),
+    this.todoApi.listTodoLists().subscribe({
+      next: lists => {
+        this.todoLists.set(lists);
+        const currentListId = this.selectedListId();
+        const selectedList = currentListId && lists.some(list => list.id === currentListId)
+          ? currentListId
+          : (lists[0]?.id ?? null);
+        this.selectedListId.set(selectedList);
+
+        if (selectedList) {
+          this.loadTodosForList(selectedList);
+        } else {
+          this.todos.set([]);
+        }
+      },
       error: error => this.errorMessage.set(extractTodoErrorMessage(error))
     });
+  }
+
+  setNewListTitle(title: string): void {
+    this.newListTitle.set(title);
   }
 
   setNewTitle(title: string): void {
     this.newTitle.set(title);
   }
 
+  setEditListTitle(title: string): void {
+    this.editListTitle.set(title);
+  }
+
   setEditTitle(title: string): void {
     this.editTitle.set(title);
   }
 
+  createTodoList(): void {
+    const title = this.newListTitle().trim();
+    if (!title) {
+      this.errorMessage.set('List title is required');
+      return;
+    }
+
+    this.todoApi.createTodoList(title).subscribe({
+      next: list => {
+        this.todoLists.update(lists => [...lists, list]);
+        this.selectedListId.set(list.id);
+        this.todos.set([]);
+        this.newListTitle.set('');
+        this.cancelTodoListEdit();
+        this.errorMessage.set(null);
+      },
+      error: error => this.errorMessage.set(extractTodoErrorMessage(error))
+    });
+  }
+
+  selectTodoList(id: string): void {
+    if (this.selectedListId() === id) {
+      return;
+    }
+
+    this.selectedListId.set(id);
+    this.cancelEdit();
+    this.cancelTodoListEdit();
+    this.filter.set('all');
+    this.todos.set([]);
+    this.loadTodosForList(id);
+  }
+
+  startEditingTodoList(list: TodoList): void {
+    this.editingListId.set(list.id);
+    this.editListTitle.set(list.title);
+    this.errorMessage.set(null);
+  }
+
+  saveTodoListEdit(): void {
+    const id = this.editingListId();
+    if (!id) {
+      return;
+    }
+
+    const title = this.editListTitle().trim();
+    if (!title) {
+      this.errorMessage.set('List title is required');
+      return;
+    }
+
+    this.todoApi.updateTodoList(id, title).subscribe({
+      next: updated => {
+        this.todoLists.update(lists => lists.map(list => list.id === updated.id ? updated : list));
+        this.cancelTodoListEdit();
+        this.errorMessage.set(null);
+      },
+      error: error => this.errorMessage.set(extractTodoErrorMessage(error))
+    });
+  }
+
+  cancelTodoListEdit(): void {
+    this.editingListId.set(null);
+    this.editListTitle.set('');
+  }
+
+  deleteTodoList(id: string): void {
+    if (this.isListDeletePending(id)) {
+      return;
+    }
+
+    this.setListDeletePending(id, true);
+    this.todoApi.deleteTodoList(id).pipe(
+      finalize(() => this.setListDeletePending(id, false))
+    ).subscribe({
+      next: () => {
+        const remainingLists = this.todoLists().filter(list => list.id !== id);
+        this.todoLists.set(remainingLists);
+
+        if (this.editingListId() === id) {
+          this.cancelTodoListEdit();
+        }
+
+        if (this.selectedListId() !== id) {
+          return;
+        }
+
+        const nextListId = remainingLists[0]?.id ?? null;
+        this.selectedListId.set(nextListId);
+        this.cancelEdit();
+        if (nextListId) {
+          this.loadTodosForList(nextListId);
+        } else {
+          this.todos.set([]);
+        }
+      },
+      error: error => this.errorMessage.set(extractTodoErrorMessage(error))
+    });
+  }
+
+  isListDeletePending(id: string): boolean {
+    return this.pendingListDeleteIds().has(id);
+  }
+
   createTodo(): void {
+    const selectedListId = this.selectedListId();
+    if (!selectedListId) {
+      this.errorMessage.set('Create a list first');
+      return;
+    }
+
     const title = this.newTitle().trim();
     if (!title) {
       this.errorMessage.set('Title is required');
       return;
     }
 
-    this.todoApi.create(title).subscribe({
+    this.todoApi.createTodo(selectedListId, title).subscribe({
       next: todo => {
         this.todos.update(todos => [...todos, todo]);
         this.newTitle.set('');
@@ -63,12 +204,17 @@ export class TodoStore {
   }
 
   toggleTodo(todo: Todo): void {
+    const selectedListId = this.selectedListId();
+    if (!selectedListId) {
+      return;
+    }
+
     if (this.isTogglePending(todo.id) || this.isTodoExiting(todo.id)) {
       return;
     }
 
     this.setTogglePending(todo.id, true);
-    this.todoApi.update(todo.id, { completed: !todo.completed }).pipe(
+    this.todoApi.updateTodo(selectedListId, todo.id, { completed: !todo.completed }).pipe(
       finalize(() => this.setTogglePending(todo.id, false))
     ).subscribe({
       next: updated => {
@@ -106,8 +252,9 @@ export class TodoStore {
   }
 
   saveEdit(): void {
+    const selectedListId = this.selectedListId();
     const id = this.editingId();
-    if (!id) {
+    if (!selectedListId || !id) {
       return;
     }
 
@@ -118,7 +265,7 @@ export class TodoStore {
     }
 
     const changes: TodoChanges = { title };
-    this.todoApi.update(id, changes).subscribe({
+    this.todoApi.updateTodo(selectedListId, id, changes).subscribe({
       next: updated => {
         this.replaceTodo(updated);
         this.editingId.set(null);
@@ -130,8 +277,9 @@ export class TodoStore {
   }
 
   saveEditAndMove(direction: EditMoveDirection): void {
+    const selectedListId = this.selectedListId();
     const id = this.editingId();
-    if (!id) {
+    if (!selectedListId || !id) {
       return;
     }
 
@@ -151,7 +299,7 @@ export class TodoStore {
     const nextTodo = currentTodos[nextIndex];
     const changes: TodoChanges = { title };
 
-    this.todoApi.update(id, changes).subscribe({
+    this.todoApi.updateTodo(selectedListId, id, changes).subscribe({
       next: updated => {
         this.replaceTodo(updated);
         this.startEditing(nextTodo.id === updated.id ? updated : nextTodo);
@@ -167,12 +315,17 @@ export class TodoStore {
   }
 
   deleteTodo(id: string): void {
+    const selectedListId = this.selectedListId();
+    if (!selectedListId) {
+      return;
+    }
+
     if (this.isDeletePending(id) || this.isTodoExiting(id)) {
       return;
     }
 
     this.setDeletePending(id, true);
-    this.todoApi.delete(id).pipe(
+    this.todoApi.deleteTodo(selectedListId, id).pipe(
       finalize(() => this.setDeletePending(id, false))
     ).subscribe({
       next: () => {
@@ -222,6 +375,30 @@ export class TodoStore {
       this.setTodoExiting(id, false);
     }, TODO_EXIT_ANIMATION_MS);
     this.exitTimers.set(id, timer);
+  }
+
+  private loadTodosForList(todoListId: string): void {
+    this.todoApi.listTodos(todoListId).subscribe({
+      next: todos => {
+        if (this.selectedListId() === todoListId) {
+          this.todos.set(todos);
+          this.errorMessage.set(null);
+        }
+      },
+      error: error => this.errorMessage.set(extractTodoErrorMessage(error))
+    });
+  }
+
+  private setListDeletePending(id: string, pending: boolean): void {
+    this.pendingListDeleteIds.update(ids => {
+      const nextIds = new Set(ids);
+      if (pending) {
+        nextIds.add(id);
+      } else {
+        nextIds.delete(id);
+      }
+      return nextIds;
+    });
   }
 
   private setTogglePending(id: string, pending: boolean): void {

@@ -15,37 +15,62 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/todos")
+@RequestMapping("/api/todo-lists")
 public class TodoController {
     private final TodoService todoService;
+    private final TodoListService todoListService;
 
-    public TodoController(TodoService todoService) {
+    public TodoController(TodoService todoService, TodoListService todoListService) {
         this.todoService = todoService;
+        this.todoListService = todoListService;
     }
 
     @GetMapping
-    public List<Todo> list() {
-        return todoService.list();
+    public List<TodoList> listTodoLists() {
+        return todoListService.list();
     }
 
     @PostMapping
-    public ResponseEntity<Todo> create(@RequestBody CreateTodoRequest request) {
-        Todo created = todoService.create(request == null ? null : request.title());
-        return ResponseEntity.created(URI.create("/api/todos/" + created.id())).body(created);
+    public ResponseEntity<TodoList> createTodoList(@RequestBody CreateTodoListRequest request) {
+        TodoList created = todoListService.create(request == null ? null : request.title());
+        return ResponseEntity.created(URI.create("/api/todo-lists/" + created.id())).body(created);
     }
 
-    @PatchMapping("/{id}")
-    public Todo update(@PathVariable UUID id, @RequestBody UpdateTodoRequest request) {
+    @PatchMapping("/{listId}")
+    public TodoList updateTodoList(@PathVariable UUID listId, @RequestBody UpdateTodoListRequest request) {
+        return todoListService.update(listId, request == null ? null : request.title());
+    }
+
+    @DeleteMapping("/{listId}")
+    public ResponseEntity<Void> deleteTodoList(@PathVariable UUID listId) {
+        todoListService.delete(listId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{listId}/todos")
+    public List<Todo> listTodos(@PathVariable UUID listId) {
+        return todoService.list(listId);
+    }
+
+    @PostMapping("/{listId}/todos")
+    public ResponseEntity<Todo> createTodo(@PathVariable UUID listId, @RequestBody CreateTodoRequest request) {
+        Todo created = todoService.create(listId, request == null ? null : request.title());
+        return ResponseEntity.created(URI.create("/api/todo-lists/" + listId + "/todos/" + created.id())).body(created);
+    }
+
+    @PatchMapping("/{listId}/todos/{id}")
+    public Todo updateTodo(@PathVariable UUID listId, @PathVariable UUID id, @RequestBody UpdateTodoRequest request) {
         return todoService.update(
+                listId,
                 id,
                 request == null ? null : request.title(),
                 request == null ? null : request.completed()
         );
     }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        todoService.delete(id);
+    @DeleteMapping("/{listId}/todos/{id}")
+    public ResponseEntity<Void> deleteTodo(@PathVariable UUID listId, @PathVariable UUID id) {
+        todoService.delete(listId, id);
         return ResponseEntity.noContent().build();
     }
 }

@@ -10,19 +10,35 @@ describe('AppComponent', () => {
   let api: jasmine.SpyObj<TodoApiService>;
 
   beforeEach(async () => {
-    api = jasmine.createSpyObj<TodoApiService>('TodoApiService', ['list', 'create', 'update', 'delete']);
-    api.list.and.returnValue(of([
+    api = jasmine.createSpyObj<TodoApiService>('TodoApiService', [
+      'listTodoLists',
+      'createTodoList',
+      'updateTodoList',
+      'deleteTodoList',
+      'listTodos',
+      'createTodo',
+      'updateTodo',
+      'deleteTodo'
+    ]);
+    api.listTodoLists.and.returnValue(of([
+      { id: 'list-1', title: 'Inbox' },
+      { id: 'list-2', title: 'Work' }
+    ]));
+    api.listTodos.and.returnValue(of([
       { id: '1', title: 'Open task', completed: false },
       { id: '2', title: 'Done task', completed: true }
     ]));
-    api.create.and.callFake((title: string) => of({ id: '3', title, completed: false }));
-    api.update.and.callFake((id: string, changes: TodoChanges) => {
+    api.createTodoList.and.callFake((title: string) => of({ id: 'list-3', title }));
+    api.updateTodoList.and.callFake((id: string, title: string) => of({ id, title }));
+    api.deleteTodoList.and.returnValue(of(undefined));
+    api.createTodo.and.callFake((_listId: string, title: string) => of({ id: '3', title, completed: false }));
+    api.updateTodo.and.callFake((_listId: string, id: string, changes: TodoChanges) => {
       const existing = id === '1'
         ? { id: '1', title: 'Open task', completed: false }
         : { id: '2', title: 'Done task', completed: true };
       return of({ ...existing, ...changes });
     });
-    api.delete.and.returnValue(of(undefined));
+    api.deleteTodo.and.returnValue(of(undefined));
 
     await TestBed.configureTestingModule({
       imports: [AppComponent],
@@ -36,8 +52,50 @@ describe('AppComponent', () => {
   it('renders todos loaded from the backend', () => {
     const text = fixture.nativeElement.textContent as string;
 
+    expect(text).toContain('Inbox');
+    expect(text).toContain('Work');
     expect(text).toContain('Open task');
     expect(text).toContain('Done task');
+  });
+
+  it('creates and selects todo lists from the sidebar', () => {
+    fillInput('#new-list-title', 'Errands');
+
+    clickButton('Add list');
+    fixture.detectChanges();
+
+    expect(api.createTodoList).toHaveBeenCalledWith('Errands');
+    expect(fixture.nativeElement.textContent).toContain('Errands');
+    expect(fixture.componentInstance.store.selectedListId()).toBe('list-3');
+  });
+
+  it('renames todo lists inline', () => {
+    getButtonWithin(getListItem('Inbox'), 'Rename').click();
+    fixture.detectChanges();
+
+    fillInput('#edit-list-title', 'Personal');
+    dispatchListEditKey('Enter');
+    fixture.detectChanges();
+
+    expect(api.updateTodoList).toHaveBeenCalledWith('list-1', 'Personal');
+    expect(fixture.nativeElement.textContent).toContain('Personal');
+  });
+
+  it('confirms before deleting todo lists', () => {
+    spyOn(window, 'confirm').and.returnValues(false, true);
+
+    const inbox = getListItem('Inbox');
+    getButtonWithin(inbox, 'Delete list').click();
+    fixture.detectChanges();
+
+    expect(api.deleteTodoList).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Inbox');
+
+    getButtonWithin(inbox, 'Delete list').click();
+    fixture.detectChanges();
+
+    expect(api.deleteTodoList).toHaveBeenCalledWith('list-1');
+    expect(fixture.nativeElement.textContent).not.toContain('Inbox');
   });
 
   it('validates empty todo titles before creating', () => {
@@ -46,7 +104,7 @@ describe('AppComponent', () => {
     clickButton('Add');
     fixture.detectChanges();
 
-    expect(api.create).not.toHaveBeenCalled();
+    expect(api.createTodo).not.toHaveBeenCalled();
     expect(fixture.nativeElement.textContent).toContain('Title is required');
   });
 
@@ -56,7 +114,7 @@ describe('AppComponent', () => {
     clickButton('Add');
     fixture.detectChanges();
 
-    expect(api.create).toHaveBeenCalledWith('New task');
+    expect(api.createTodo).toHaveBeenCalledWith('list-1', 'New task');
     expect(fixture.nativeElement.textContent).toContain('New task');
   });
 
@@ -78,12 +136,12 @@ describe('AppComponent', () => {
     const checkbox = fixture.nativeElement.querySelector('input[type="checkbox"]') as HTMLInputElement;
     checkbox.click();
 
-    expect(api.update).toHaveBeenCalledWith('1', { completed: true });
+    expect(api.updateTodo).toHaveBeenCalledWith('list-1', '1', { completed: true });
   });
 
   it('disables the checkbox while a toggle update is pending', () => {
     const pendingUpdate = new Subject<Todo>();
-    api.update.and.returnValue(pendingUpdate.asObservable());
+    api.updateTodo.and.returnValue(pendingUpdate.asObservable());
 
     fixture.componentInstance.store.toggleTodo({ id: '1', title: 'Open task', completed: false });
     fixture.detectChanges();
@@ -127,7 +185,7 @@ describe('AppComponent', () => {
 
     expect(buttonExists('Save')).toBeFalse();
     expect(buttonExists('Cancel')).toBeFalse();
-    expect(api.update).toHaveBeenCalledWith('1', { title: 'Edited task' });
+    expect(api.updateTodo).toHaveBeenCalledWith('list-1', '1', { title: 'Edited task' });
   });
 
   it('saves inline edits when Enter is pressed', () => {
@@ -140,7 +198,7 @@ describe('AppComponent', () => {
     fillInput('#edit-title', 'Keyboard saved task');
     dispatchEditKey('Enter');
 
-    expect(api.update).toHaveBeenCalledWith('1', { title: 'Keyboard saved task' });
+    expect(api.updateTodo).toHaveBeenCalledWith('list-1', '1', { title: 'Keyboard saved task' });
   });
 
   it('saves inline edits and activates the next todo when ArrowDown is pressed', fakeAsync(() => {
@@ -158,7 +216,7 @@ describe('AppComponent', () => {
     tick(20);
 
     const editInput = fixture.nativeElement.querySelector('#edit-title') as HTMLInputElement;
-    expect(api.update).toHaveBeenCalledWith('1', { title: 'Arrow saved task' });
+    expect(api.updateTodo).toHaveBeenCalledWith('list-1', '1', { title: 'Arrow saved task' });
     expect(fixture.componentInstance.store.editingId()).toBe('2');
     expect(editInput.value).toBe('Done task');
     expect(document.activeElement).toBe(editInput);
@@ -175,7 +233,7 @@ describe('AppComponent', () => {
     dispatchEditKey('Escape');
     fixture.detectChanges();
 
-    expect(api.update).not.toHaveBeenCalledWith('1', { title: 'Escaped task' });
+    expect(api.updateTodo).not.toHaveBeenCalledWith('list-1', '1', { title: 'Escaped task' });
     expect(fixture.nativeElement.querySelector('#edit-title')).toBeNull();
   });
 
@@ -192,8 +250,8 @@ describe('AppComponent', () => {
     deleteButton.click();
     fixture.detectChanges();
 
-    expect(api.update).not.toHaveBeenCalledWith('1', { title: 'Draft before delete' });
-    expect(api.delete).toHaveBeenCalledWith('1');
+    expect(api.updateTodo).not.toHaveBeenCalledWith('list-1', '1', { title: 'Draft before delete' });
+    expect(api.deleteTodo).toHaveBeenCalledWith('list-1', '1');
 
     tick(180);
     fixture.detectChanges();
@@ -208,7 +266,7 @@ describe('AppComponent', () => {
     deleteButton.click();
     fixture.detectChanges();
 
-    expect(api.delete).toHaveBeenCalledWith('1');
+    expect(api.deleteTodo).toHaveBeenCalledWith('list-1', '1');
     expect(firstTodo.classList).toContain('exiting');
     expect(fixture.componentInstance.store.todos()).toContain(jasmine.objectContaining({ id: '1' }));
 
@@ -229,6 +287,11 @@ describe('AppComponent', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key }));
   }
 
+  function dispatchListEditKey(key: string): void {
+    const input = fixture.nativeElement.querySelector('#edit-list-title') as HTMLInputElement;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key }));
+  }
+
   function blurEditInput(): void {
     const input = fixture.nativeElement.querySelector('#edit-title') as HTMLInputElement;
     input.dispatchEvent(new FocusEvent('blur'));
@@ -239,6 +302,17 @@ describe('AppComponent', () => {
     const button = buttons
       .find(candidate => candidate.textContent?.trim() === label) as HTMLButtonElement;
     button.click();
+  }
+
+  function getListItem(label: string): HTMLElement {
+    const items = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="todo-list-item"]')) as HTMLElement[];
+    return items
+      .find(item => item.textContent?.includes(label)) as HTMLElement;
+  }
+
+  function getButtonWithin(element: HTMLElement, label: string): HTMLButtonElement {
+    return Array.from(element.querySelectorAll('button'))
+      .find(button => button.textContent?.trim() === label) as HTMLButtonElement;
   }
 
   function buttonExists(label: string): boolean {

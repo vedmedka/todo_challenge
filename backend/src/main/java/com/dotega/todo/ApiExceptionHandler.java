@@ -20,6 +20,11 @@ class ApiExceptionHandler {
         return error(HttpStatus.NOT_FOUND, exception.getMessage(), request);
     }
 
+    @ExceptionHandler(TodoListNotFoundException.class)
+    ResponseEntity<ApiError> handleTodoListNotFound(TodoListNotFoundException exception, HttpServletRequest request) {
+        return error(HttpStatus.NOT_FOUND, exception.getMessage(), request);
+    }
+
     private static ResponseEntity<ApiError> error(HttpStatus status, String message, HttpServletRequest request) {
         ApiError error = new ApiError(
                 Instant.now(),

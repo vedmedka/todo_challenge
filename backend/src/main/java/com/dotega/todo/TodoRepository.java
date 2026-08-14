@@ -5,13 +5,13 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface TodoRepository {
-    List<Todo> findAll();
+    List<Todo> findAll(UUID todoListId);
 
-    Optional<Todo> findById(UUID id);
+    Optional<Todo> findById(UUID todoListId, UUID id);
 
-    void create(Todo todo);
+    void create(UUID todoListId, Todo todo);
 
-    Optional<Todo> patch(UUID id, TodoPatch patch);
+    Optional<Todo> patch(UUID todoListId, UUID id, TodoPatch patch);
 
-    boolean delete(UUID id);
+    boolean delete(UUID todoListId, UUID id);
 }

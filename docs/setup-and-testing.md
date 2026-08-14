@@ -23,9 +23,9 @@ docker compose version
 docker compose up --build
 ```
 
-The frontend runs at <http://localhost:4200>. The backend API is available at <http://localhost:8080/api/todos>.
+The frontend runs at <http://localhost:4200>. The backend API is available at <http://localhost:8080/api/todo-lists>.
 
-PostgreSQL 18 runs in a separate `db` container. Todo data is stored in the `todo-postgres-data` Docker volume and survives backend or database container recreation.
+PostgreSQL 18 runs in a separate `db` container. Todo lists and todos are stored in the `todo-postgres-data` Docker volume and survive backend or database container recreation.
 
 Reset local todo data:
 
@@ -33,6 +33,30 @@ Reset local todo data:
 docker compose down -v
 docker compose up --build
 ```
+
+The multi-list migration intentionally resets older single-list todo rows before creating `todo_lists` and list-scoped todos. A fresh database starts with an `Inbox` list, but users may delete every list.
+
+## API Overview
+
+Todo lists:
+
+```text
+GET    /api/todo-lists
+POST   /api/todo-lists
+PATCH  /api/todo-lists/{listId}
+DELETE /api/todo-lists/{listId}
+```
+
+Todos are always scoped to a list:
+
+```text
+GET    /api/todo-lists/{listId}/todos
+POST   /api/todo-lists/{listId}/todos
+PATCH  /api/todo-lists/{listId}/todos/{todoId}
+DELETE /api/todo-lists/{listId}/todos/{todoId}
+```
+
+Blank todo or list titles return `400`. Missing todo lists or todos return `404`. Deleting a todo list also deletes all todos in that list.
 
 ## Run Verification
 

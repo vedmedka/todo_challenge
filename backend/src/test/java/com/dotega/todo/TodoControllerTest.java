@@ -31,7 +31,7 @@ class TodoControllerTest {
 
     @BeforeEach
     void clearTodos() {
-        jdbcTemplate.update("truncate table todos");
+        jdbcTemplate.update("truncate table todo_lists cascade");
     }
 
     @AfterEach
@@ -40,8 +40,41 @@ class TodoControllerTest {
     }
 
     @Test
-    void createsAndListsTodos() throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/todos")
+    void createsUpdatesAndDeletesTodoLists() throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/todo-lists")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\" Work \"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id", notNullValue()))
+                .andExpect(jsonPath("$.title").value("Work"))
+                .andReturn();
+
+        String listId = JsonPathSupport.read(result, "$.id");
+
+        mockMvc.perform(get("/api/todo-lists"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", hasItem(listId)));
+
+        mockMvc.perform(patch("/api/todo-lists/{listId}", listId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Home\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(listId))
+                .andExpect(jsonPath("$.title").value("Home"));
+
+        mockMvc.perform(delete("/api/todo-lists/{listId}", listId))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/todo-lists"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id").isEmpty());
+    }
+
+    @Test
+    void createsAndListsTodosInsideTodoList() throws Exception {
+        String listId = createTodoList("Work");
+
+        MvcResult result = mockMvc.perform(post("/api/todo-lists/{listId}/todos", listId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\" Write tests \"}"))
                 .andExpect(status().isCreated())
@@ -52,16 +85,17 @@ class TodoControllerTest {
 
         String id = JsonPathSupport.read(result, "$.id");
 
-        mockMvc.perform(get("/api/todos"))
+        mockMvc.perform(get("/api/todo-lists/{listId}/todos", listId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].id", hasItem(id)));
     }
 
     @Test
     void updatesTodoTitleAndCompletedState() throws Exception {
-        String id = createTodo("Draft");
+        String listId = createTodoList("Work");
+        String id = createTodo(listId, "Draft");
 
-        mockMvc.perform(patch("/api/todos/{id}", id)
+        mockMvc.perform(patch("/api/todo-lists/{listId}/todos/{id}", listId, id)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"Done\",\"completed\":true}"))
                 .andExpect(status().isOk())
@@ -72,12 +106,13 @@ class TodoControllerTest {
 
     @Test
     void deletesTodo() throws Exception {
-        String id = createTodo("Remove");
+        String listId = createTodoList("Work");
+        String id = createTodo(listId, "Remove");
 
-        mockMvc.perform(delete("/api/todos/{id}", id))
+        mockMvc.perform(delete("/api/todo-lists/{listId}/todos/{id}", listId, id))
                 .andExpect(status().isNoContent());
 
-        mockMvc.perform(patch("/api/todos/{id}", id)
+        mockMvc.perform(patch("/api/todo-lists/{listId}/todos/{id}", listId, id)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"completed\":true}"))
                 .andExpect(status().isNotFound());
@@ -85,7 +120,16 @@ class TodoControllerTest {
 
     @Test
     void returnsValidationErrorForBlankTitle() throws Exception {
-        mockMvc.perform(post("/api/todos")
+        mockMvc.perform(post("/api/todo-lists")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\" \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("Todo list title must not be empty"));
+
+        String listId = createTodoList("Work");
+
+        mockMvc.perform(post("/api/todo-lists/{listId}/todos", listId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\" \"}"))
                 .andExpect(status().isBadRequest())
@@ -95,13 +139,46 @@ class TodoControllerTest {
 
     @Test
     void returnsNotFoundForMissingTodo() throws Exception {
-        mockMvc.perform(delete("/api/todos/{id}", "00000000-0000-0000-0000-000000000000"))
+        String listId = createTodoList("Work");
+
+        mockMvc.perform(delete("/api/todo-lists/{listId}/todos/{id}", listId, "00000000-0000-0000-0000-000000000000"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404));
     }
 
-    private String createTodo(String title) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/todos")
+    @Test
+    void returnsNotFoundForMissingTodoList() throws Exception {
+        mockMvc.perform(get("/api/todo-lists/{listId}/todos", "00000000-0000-0000-0000-000000000000"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.message").value("Todo list not found: 00000000-0000-0000-0000-000000000000"));
+    }
+
+    @Test
+    void deletingTodoListCascadesItsTodos() throws Exception {
+        String listId = createTodoList("Work");
+        String todoId = createTodo(listId, "Remove with list");
+
+        mockMvc.perform(delete("/api/todo-lists/{listId}", listId))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(patch("/api/todo-lists/{listId}/todos/{id}", listId, todoId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"completed\":true}"))
+                .andExpect(status().isNotFound());
+    }
+
+    private String createTodoList(String title) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/todo-lists")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"" + title + "\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return JsonPathSupport.read(result, "$.id");
+    }
+
+    private String createTodo(String listId, String title) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/todo-lists/{listId}/todos", listId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"" + title + "\"}"))
                 .andExpect(status().isCreated())
