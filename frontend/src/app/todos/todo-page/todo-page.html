@@ -1,0 +1,90 @@
+<main class="ledger-app">
+  <app-todo-lists
+    [todoLists]="store.todoLists()"
+    [selectedListId]="store.selectedListId()"
+    [editingListId]="store.editingListId()"
+    [newListTitle]="store.newListTitle()"
+    [editListTitle]="store.editListTitle()"
+    [activeTodoCounts]="store.activeTodoCounts()"
+    [pendingListDeleteIds]="store.pendingListDeleteIds()"
+    (selectTodoList)="store.selectTodoList($event)"
+    (startEditingTodoList)="store.startEditingTodoList($event)"
+    (deleteTodoList)="confirmDeleteTodoList($event)"
+    (setNewListTitle)="store.setNewListTitle($event)"
+    (createTodoList)="store.createTodoList()"
+    (setEditListTitle)="store.setEditListTitle($event)"
+    (saveTodoListEdit)="store.saveTodoListEdit()"
+    (cancelTodoListEdit)="store.cancelTodoListEdit()"
+  />
+
+  <section class="task-sheet" aria-labelledby="todo-title">
+    <header class="sheet-header">
+      <h2 id="todo-title">{{ store.selectedTodoList()?.title ?? 'TODO' }}</h2>
+      <p>{{ store.completedTodos().length }}/{{ store.todos().length }} DONE</p>
+    </header>
+
+    @if (store.selectedListId()) {
+      <form class="new-todo" (submit)="$event.preventDefault(); store.createTodo()">
+        <span class="add-todo-mark" aria-hidden="true">+</span>
+        <label class="sr-only" for="new-title">New todo title</label>
+        <input
+          id="new-title"
+          type="text"
+          [value]="store.newTitle()"
+          (input)="store.setNewTitle($any($event.target).value)"
+          placeholder="Write a to-do and press enter"
+          autocomplete="off"
+        >
+        <button type="submit" class="sr-only">Create todo</button>
+      </form>
+    }
+
+    @if (store.errorMessage(); as message) {
+      <p class="error" role="alert">{{ message }}</p>
+    }
+
+    @if (!store.selectedListId()) {
+      <p class="empty">No list selected</p>
+    } @else {
+      <app-todo-section
+        [todos]="store.activeTodos()"
+        status="active"
+        label="Active todos"
+        emptyMessage="No active todos"
+        [editingId]="store.editingId()"
+        [editTitle]="store.editTitle()"
+        [pendingToggleIds]="store.pendingToggleIds()"
+        [pendingDeleteIds]="store.pendingDeleteIds()"
+        [exitingTodoIds]="store.exitingTodoIds()"
+        (toggleTodo)="store.toggleTodo($event)"
+        (startEditing)="store.startEditing($event)"
+        (setEditTitle)="store.setEditTitle($event)"
+        (saveEdit)="saveEditOnBlur()"
+        (saveEditAndMove)="saveEditAndMove($event)"
+        (cancelEdit)="store.cancelEdit()"
+        (deleteTodo)="store.deleteTodo($event)"
+      />
+
+      <app-todo-section
+        [todos]="store.completedTodos()"
+        status="done"
+        label="Done todos"
+        headingId="done-title"
+        heading="DONE"
+        emptyMessage="No done todos"
+        [editingId]="store.editingId()"
+        [editTitle]="store.editTitle()"
+        [pendingToggleIds]="store.pendingToggleIds()"
+        [pendingDeleteIds]="store.pendingDeleteIds()"
+        [exitingTodoIds]="store.exitingTodoIds()"
+        (toggleTodo)="store.toggleTodo($event)"
+        (startEditing)="store.startEditing($event)"
+        (setEditTitle)="store.setEditTitle($event)"
+        (saveEdit)="saveEditOnBlur()"
+        (saveEditAndMove)="saveEditAndMove($event)"
+        (cancelEdit)="store.cancelEdit()"
+        (deleteTodo)="store.deleteTodo($event)"
+      />
+    }
+  </section>
+</main>

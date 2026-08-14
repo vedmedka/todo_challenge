@@ -1,0 +1,58 @@
+<li
+  class="todo-item"
+  data-testid="todo-item"
+  [attr.data-status]="status()"
+  [class.done]="status() === 'done'"
+  [class.exiting]="exiting()"
+>
+  <input
+    type="checkbox"
+    [checked]="todo().completed"
+    [disabled]="togglePending() || exiting()"
+    (change)="toggleTodo.emit(todo())"
+    aria-label="Toggle complete"
+  >
+
+  @if (editingId() === todo().id) {
+    <label class="sr-only" for="edit-title">Edit todo title</label>
+    <input
+      id="edit-title"
+      class="edit-input"
+      type="text"
+      [value]="editTitle()"
+      (input)="setEditTitle.emit($any($event.target).value)"
+      (blur)="saveEdit.emit()"
+      (keydown.enter)="saveEdit.emit()"
+      (keydown.arrowup)="saveEditAndMoveFromKeyboard($event, 'previous')"
+      (keydown.arrowdown)="saveEditAndMoveFromKeyboard($event, 'next')"
+      (keydown.escape)="cancelEdit.emit()"
+      autocomplete="off"
+    >
+  } @else {
+    <button
+      type="button"
+      class="todo-title-button"
+      [disabled]="exiting()"
+      (click)="startEditing.emit(todo())"
+    >
+      {{ todo().title }}
+    </button>
+  }
+
+  <button
+    type="button"
+    class="icon-button danger todo-delete"
+    aria-label="Delete todo"
+    [disabled]="deletePending() || exiting()"
+    (mousedown)="$event.preventDefault()"
+    (click)="deleteTodo.emit(todo().id)"
+  >
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M3 6h18"></path>
+      <path d="M8 6V4h8v2"></path>
+      <path d="M6 6l1 14h10l1-14"></path>
+      <path d="M10 10v6"></path>
+      <path d="M14 10v6"></path>
+    </svg>
+  </button>
+</li>

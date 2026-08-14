@@ -1,0 +1,339 @@
+import { of, Subject } from 'rxjs';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+
+import { TodoApiService } from '../todo-api.service';
+import { Todo, TodoChanges } from '../todo.model';
+import { TodoPageComponent } from './todo-page';
+
+describe('TodoPageComponent', () => {
+  let fixture: ComponentFixture<TodoPageComponent>;
+  let api: jasmine.SpyObj<TodoApiService>;
+
+  beforeEach(async () => {
+    api = jasmine.createSpyObj<TodoApiService>('TodoApiService', [
+      'listTodoLists',
+      'createTodoList',
+      'updateTodoList',
+      'deleteTodoList',
+      'listTodos',
+      'createTodo',
+      'updateTodo',
+      'deleteTodo'
+    ]);
+    api.listTodoLists.and.returnValue(of([
+      { id: 'list-1', title: 'Inbox' },
+      { id: 'list-2', title: 'Work' }
+    ]));
+    api.listTodos.and.returnValue(of([
+      { id: '1', title: 'Open task', completed: false },
+      { id: '2', title: 'Done task', completed: true }
+    ]));
+    api.createTodoList.and.callFake((title: string) => of({ id: 'list-3', title }));
+    api.updateTodoList.and.callFake((id: string, title: string) => of({ id, title }));
+    api.deleteTodoList.and.returnValue(of(undefined));
+    api.createTodo.and.callFake((_listId: string, title: string) => of({ id: '3', title, completed: false }));
+    api.updateTodo.and.callFake((_listId: string, id: string, changes: TodoChanges) => {
+      const existing = id === '1'
+        ? { id: '1', title: 'Open task', completed: false }
+        : { id: '2', title: 'Done task', completed: true };
+      return of({ ...existing, ...changes });
+    });
+    api.deleteTodo.and.returnValue(of(undefined));
+
+    await TestBed.configureTestingModule({
+      imports: [TodoPageComponent],
+      providers: [{ provide: TodoApiService, useValue: api }]
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(TodoPageComponent);
+    fixture.detectChanges();
+  });
+
+  it('renders todos loaded from the backend', () => {
+    const text = fixture.nativeElement.textContent as string;
+
+    expect(text).toContain('Todos');
+    expect(text).toContain('2 LISTS');
+    expect(text).toContain('Inbox');
+    expect(text).toContain('Work');
+    expect(text).toContain('Open task');
+    expect(text).toContain('Done task');
+  });
+
+  it('renders the ledger task sheet with active and done groups', () => {
+    const text = fixture.nativeElement.textContent as string;
+    const newTodoInput = fixture.nativeElement.querySelector('#new-title') as HTMLInputElement;
+    const activeItems = fixture.nativeElement.querySelectorAll('[data-testid="todo-item"][data-status="active"]');
+    const doneItems = fixture.nativeElement.querySelectorAll('[data-testid="todo-item"][data-status="done"]');
+
+    expect(newTodoInput.placeholder).toBe('Write a to-do and press enter');
+    expect(text).toContain('1/2 DONE');
+    expect(text).toContain('DONE');
+    expect(activeItems.length).toBe(1);
+    expect(doneItems.length).toBe(1);
+    expect((doneItems[0] as HTMLElement).textContent).toContain('Done task');
+  });
+
+  it('creates and selects todo lists from the sidebar', () => {
+    fillInput('#new-list-title', 'Errands');
+
+    submitForm('.new-list');
+    fixture.detectChanges();
+
+    expect(api.createTodoList).toHaveBeenCalledWith('Errands');
+    expect(fixture.nativeElement.textContent).toContain('Errands');
+    expect(getStore().selectedListId()).toBe('list-3');
+  });
+
+  it('renames todo lists inline', () => {
+    getButtonWithin(getListItem('Inbox'), 'Rename list').click();
+    fixture.detectChanges();
+
+    fillInput('#edit-list-title', 'Personal');
+    dispatchListEditKey('Enter');
+    fixture.detectChanges();
+
+    expect(api.updateTodoList).toHaveBeenCalledWith('list-1', 'Personal');
+    expect(fixture.nativeElement.textContent).toContain('Personal');
+  });
+
+  it('confirms before deleting todo lists', () => {
+    spyOn(window, 'confirm').and.returnValues(false, true);
+
+    const inbox = getListItem('Inbox');
+    getButtonWithin(inbox, 'Delete list').click();
+    fixture.detectChanges();
+
+    expect(api.deleteTodoList).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Inbox');
+
+    getButtonWithin(inbox, 'Delete list').click();
+    fixture.detectChanges();
+
+    expect(api.deleteTodoList).toHaveBeenCalledWith('list-1');
+    expect(fixture.nativeElement.textContent).not.toContain('Inbox');
+  });
+
+  it('validates empty todo titles before creating', () => {
+    fillInput('#new-title', '   ');
+
+    submitForm('.new-todo');
+    fixture.detectChanges();
+
+    expect(api.createTodo).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Title is required');
+  });
+
+  it('creates todos and adds them to the list', () => {
+    fillInput('#new-title', 'New task');
+
+    submitForm('.new-todo');
+    fixture.detectChanges();
+
+    expect(api.createTodo).toHaveBeenCalledWith('list-1', 'New task');
+    expect(fixture.nativeElement.textContent).toContain('New task');
+  });
+
+  it('keeps active and completed todos visible at the same time', () => {
+    const activeItems = fixture.nativeElement.querySelectorAll('[data-testid="todo-item"][data-status="active"]');
+    const doneItems = fixture.nativeElement.querySelectorAll('[data-testid="todo-item"][data-status="done"]');
+
+    expect((activeItems[0] as HTMLElement).textContent).toContain('Open task');
+    expect((doneItems[0] as HTMLElement).textContent).toContain('Done task');
+  });
+
+  it('toggles todo completion', () => {
+    const checkbox = fixture.nativeElement.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    checkbox.click();
+
+    expect(api.updateTodo).toHaveBeenCalledWith('list-1', '1', { completed: true });
+  });
+
+  it('disables the checkbox while a toggle update is pending', () => {
+    const pendingUpdate = new Subject<Todo>();
+    api.updateTodo.and.returnValue(pendingUpdate.asObservable());
+
+    getStore().toggleTodo({ id: '1', title: 'Open task', completed: false });
+    fixture.detectChanges();
+
+    const checkbox = fixture.nativeElement.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(checkbox.disabled).toBeTrue();
+
+    pendingUpdate.next({ id: '1', title: 'Open task', completed: true });
+    pendingUpdate.complete();
+    fixture.detectChanges();
+
+    const completedCheckbox = getListItemByText('Open task').querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(completedCheckbox.disabled).toBeFalse();
+  });
+
+  it('starts inline editing from the todo title without rendering an edit button', fakeAsync(() => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+
+    expect(Array.from(firstTodo.querySelectorAll('button'))
+      .some(button => button.textContent?.trim() === 'Edit')).toBeFalse();
+
+    titleButton.click();
+    fixture.detectChanges();
+    fixture.detectChanges();
+    tick(20);
+
+    const editInput = fixture.nativeElement.querySelector('#edit-title') as HTMLInputElement;
+    expect(editInput).not.toBeNull();
+    expect(document.activeElement).toBe(editInput);
+  }));
+
+  it('saves inline edits when the input loses focus', () => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+    titleButton.click();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    fillInput('#edit-title', 'Edited task');
+    blurEditInput();
+
+    expect(buttonExists('Save')).toBeFalse();
+    expect(buttonExists('Cancel')).toBeFalse();
+    expect(api.updateTodo).toHaveBeenCalledWith('list-1', '1', { title: 'Edited task' });
+  });
+
+  it('saves inline edits when Enter is pressed', () => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+    titleButton.click();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    fillInput('#edit-title', 'Keyboard saved task');
+    dispatchEditKey('Enter');
+
+    expect(api.updateTodo).toHaveBeenCalledWith('list-1', '1', { title: 'Keyboard saved task' });
+  });
+
+  it('saves inline edits and activates the next todo when ArrowDown is pressed', fakeAsync(() => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+    titleButton.click();
+    fixture.detectChanges();
+    fixture.detectChanges();
+    tick(20);
+
+    fillInput('#edit-title', 'Arrow saved task');
+    dispatchEditKey('ArrowDown');
+    fixture.detectChanges();
+    fixture.detectChanges();
+    tick(20);
+
+    const editInput = fixture.nativeElement.querySelector('#edit-title') as HTMLInputElement;
+    expect(api.updateTodo).toHaveBeenCalledWith('list-1', '1', { title: 'Arrow saved task' });
+    expect(getStore().editingId()).toBe('2');
+    expect(editInput.value).toBe('Done task');
+    expect(document.activeElement).toBe(editInput);
+  }));
+
+  it('cancels inline edits when Escape is pressed', () => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+    titleButton.click();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    fillInput('#edit-title', 'Escaped task');
+    dispatchEditKey('Escape');
+    fixture.detectChanges();
+
+    expect(api.updateTodo).not.toHaveBeenCalledWith('list-1', '1', { title: 'Escaped task' });
+    expect(fixture.nativeElement.querySelector('#edit-title')).toBeNull();
+  });
+
+  it('deletes todos from inline edit mode without saving the draft', fakeAsync(() => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+    titleButton.click();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    fillInput('#edit-title', 'Draft before delete');
+    const deleteButton = getButtonWithin(firstTodo, 'Delete todo');
+    deleteButton.click();
+    fixture.detectChanges();
+
+    expect(api.updateTodo).not.toHaveBeenCalledWith('list-1', '1', { title: 'Draft before delete' });
+    expect(api.deleteTodo).toHaveBeenCalledWith('list-1', '1');
+
+    tick(180);
+    fixture.detectChanges();
+
+    expect(getStore().todos()).not.toContain(jasmine.objectContaining({ id: '1' }));
+  }));
+
+  it('fades deleted todos out before removing them', fakeAsync(() => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const deleteButton = getButtonWithin(firstTodo, 'Delete todo');
+    deleteButton.click();
+    fixture.detectChanges();
+
+    expect(api.deleteTodo).toHaveBeenCalledWith('list-1', '1');
+    expect(firstTodo.classList).toContain('exiting');
+    expect(getStore().todos()).toContain(jasmine.objectContaining({ id: '1' }));
+
+    tick(180);
+    fixture.detectChanges();
+
+    expect(getStore().todos()).not.toContain(jasmine.objectContaining({ id: '1' }));
+  }));
+
+  function fillInput(selector: string, value: string): void {
+    const input = fixture.nativeElement.querySelector(selector) as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+  }
+
+  function dispatchEditKey(key: string): void {
+    const input = fixture.nativeElement.querySelector('#edit-title') as HTMLInputElement;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key }));
+  }
+
+  function dispatchListEditKey(key: string): void {
+    const input = fixture.nativeElement.querySelector('#edit-list-title') as HTMLInputElement;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key }));
+  }
+
+  function blurEditInput(): void {
+    const input = fixture.nativeElement.querySelector('#edit-title') as HTMLInputElement;
+    input.dispatchEvent(new FocusEvent('blur'));
+  }
+
+  function submitForm(selector: string): void {
+    const form = fixture.nativeElement.querySelector(selector) as HTMLFormElement;
+    form.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
+  }
+
+  function getListItem(label: string): HTMLElement {
+    const items = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="todo-list-item"]')) as HTMLElement[];
+    return items
+      .find(item => item.textContent?.includes(label)) as HTMLElement;
+  }
+
+  function getListItemByText(label: string): HTMLElement {
+    const items = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="todo-item"]')) as HTMLElement[];
+    return items
+      .find(item => item.textContent?.includes(label)) as HTMLElement;
+  }
+
+  function getButtonWithin(element: HTMLElement, label: string): HTMLButtonElement {
+    return Array.from(element.querySelectorAll('button'))
+      .find(button => (button.getAttribute('aria-label') ?? button.textContent?.trim()) === label) as HTMLButtonElement;
+  }
+
+  function buttonExists(label: string): boolean {
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    return buttons.some(candidate => candidate.textContent?.trim() === label);
+  }
+
+  function getStore() {
+    return fixture.componentInstance.store;
+  }
+});

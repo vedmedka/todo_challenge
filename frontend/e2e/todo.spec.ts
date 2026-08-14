@@ -14,7 +14,7 @@ test('manages todos through the simple list UI', async ({ page }) => {
 
   await page.getByLabel('New todo title').press('Enter');
   await expect(page.getByText('Title is required')).toBeVisible();
-  await expect(page.getByText('Todos')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Todos' })).toBeVisible();
   await expect(page.getByLabel('New todo title')).toHaveAttribute('placeholder', 'Write a to-do and press enter');
 
   await page.getByLabel('New todo title').fill(firstTitle);

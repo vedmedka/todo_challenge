@@ -1,0 +1,33 @@
+@if (heading(); as sectionHeading) {
+  <section class="done-section" [attr.aria-labelledby]="headingId()">
+    <h3 [id]="headingId()">{{ sectionHeading }}</h3>
+    <ng-container *ngTemplateOutlet="todoList"></ng-container>
+  </section>
+} @else {
+  <ng-container *ngTemplateOutlet="todoList"></ng-container>
+}
+
+<ng-template #todoList>
+  <ul class="todo-list" [class.active-todos]="status() === 'active'" [class.done-todos]="status() === 'done'" [attr.aria-label]="label()">
+    @for (todo of todos(); track trackTodo($index, todo)) {
+      <app-todo-item
+        [todo]="todo"
+        [status]="status()"
+        [editingId]="editingId()"
+        [editTitle]="editTitle()"
+        [togglePending]="isTogglePending(todo.id)"
+        [deletePending]="isDeletePending(todo.id)"
+        [exiting]="isTodoExiting(todo.id)"
+        (toggleTodo)="toggleTodo.emit($event)"
+        (startEditing)="startEditing.emit($event)"
+        (setEditTitle)="setEditTitle.emit($event)"
+        (saveEdit)="saveEdit.emit()"
+        (saveEditAndMove)="saveEditAndMove.emit($event)"
+        (cancelEdit)="cancelEdit.emit()"
+        (deleteTodo)="deleteTodo.emit($event)"
+      />
+    } @empty {
+      <li class="empty">{{ emptyMessage() }}</li>
+    }
+  </ul>
+</ng-template>

@@ -1,0 +1,84 @@
+<aside class="ledger-sidebar" aria-label="Todo lists">
+  <header class="brand-block">
+    <h1>Todos</h1>
+    <p>{{ todoLists().length }} LISTS</p>
+  </header>
+
+  <nav aria-label="Todo lists">
+    <ul class="todo-lists">
+      @for (list of todoLists(); track list.id) {
+        <li
+          class="todo-list-item"
+          data-testid="todo-list-item"
+          [class.selected]="selectedListId() === list.id"
+        >
+          @if (editingListId() === list.id) {
+            <label class="sr-only" for="edit-list-title">Edit todo list title</label>
+            <input
+              id="edit-list-title"
+              class="list-edit-input"
+              type="text"
+              [value]="editListTitle()"
+              (input)="setEditListTitle.emit($any($event.target).value)"
+              (keydown.enter)="saveTodoListEdit.emit()"
+              (keydown.escape)="cancelTodoListEdit.emit()"
+              autocomplete="off"
+            >
+          } @else {
+            <button
+              type="button"
+              class="list-title-button"
+              [class.active]="selectedListId() === list.id"
+              (click)="selectTodoList.emit(list.id)"
+            >
+              <span>{{ list.title }}</span>
+              <span class="list-todo-count">{{ activeTodoCountForList(list.id) }}</span>
+            </button>
+
+            <div class="list-actions">
+              <button
+                type="button"
+                class="icon-button muted"
+                aria-label="Rename list"
+                (click)="startEditingTodoList.emit(list)"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M4 20h4l10.5-10.5-4-4L4 16v4Z"></path>
+                  <path d="m14.5 5.5 1.5-1.5a2 2 0 0 1 3 3l-1.5 1.5"></path>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="icon-button danger"
+                aria-label="Delete list"
+                [disabled]="isListDeletePending(list.id)"
+                (click)="deleteTodoList.emit(list.id)"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M18 6 6 18"></path>
+                  <path d="m6 6 12 12"></path>
+                </svg>
+              </button>
+            </div>
+          }
+        </li>
+      } @empty {
+        <li class="empty">No lists</li>
+      }
+    </ul>
+  </nav>
+
+  <form class="new-list" (submit)="$event.preventDefault(); createTodoList.emit()">
+    <span aria-hidden="true">+</span>
+    <label class="sr-only" for="new-list-title">New todo list title</label>
+    <input
+      id="new-list-title"
+      type="text"
+      [value]="newListTitle()"
+      (input)="setNewListTitle.emit($any($event.target).value)"
+      placeholder="New list"
+      autocomplete="off"
+    >
+    <button type="submit" class="sr-only">Create list</button>
+  </form>
+</aside>
