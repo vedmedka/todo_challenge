@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import { Todo } from './todo.model';
+import { Todo, TodoChanges } from './todo.model';
 
 @Injectable({ providedIn: 'root' })
 export class TodoApiService {
@@ -17,7 +17,7 @@ export class TodoApiService {
     return this.http.post<Todo>(this.baseUrl, { title });
   }
 
-  update(id: string, changes: Partial<Pick<Todo, 'title' | 'completed'>>): Observable<Todo> {
+  update(id: string, changes: TodoChanges): Observable<Todo> {
     return this.http.patch<Todo>(`${this.baseUrl}/${id}`, changes);
   }
 

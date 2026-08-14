@@ -3,7 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { AppComponent } from './app.component';
 import { TodoApiService } from './todo-api.service';
-import { Todo } from './todo.model';
+import { Todo, TodoChanges } from './todo.model';
 
 describe('AppComponent', () => {
   let fixture: ComponentFixture<AppComponent>;
@@ -16,7 +16,7 @@ describe('AppComponent', () => {
       { id: '2', title: 'Done task', completed: true }
     ]));
     api.create.and.callFake((title: string) => of({ id: '3', title, completed: false }));
-    api.update.and.callFake((id: string, changes: Partial<Pick<Todo, 'title' | 'completed'>>) => {
+    api.update.and.callFake((id: string, changes: TodoChanges) => {
       const existing = id === '1'
         ? { id: '1', title: 'Open task', completed: false }
         : { id: '2', title: 'Done task', completed: true };
@@ -41,9 +41,9 @@ describe('AppComponent', () => {
   });
 
   it('validates empty todo titles before creating', () => {
-    fixture.componentInstance.newTitle.setValue('   ');
+    fillInput('#new-title', '   ');
 
-    fixture.componentInstance.createTodo();
+    clickButton('Add');
     fixture.detectChanges();
 
     expect(api.create).not.toHaveBeenCalled();
@@ -51,9 +51,9 @@ describe('AppComponent', () => {
   });
 
   it('creates todos and adds them to the list', () => {
-    fixture.componentInstance.newTitle.setValue('New task');
+    fillInput('#new-title', 'New task');
 
-    fixture.componentInstance.createTodo();
+    clickButton('Add');
     fixture.detectChanges();
 
     expect(api.create).toHaveBeenCalledWith('New task');
@@ -61,13 +61,13 @@ describe('AppComponent', () => {
   });
 
   it('filters active and completed todos', () => {
-    fixture.componentInstance.setFilter('active');
+    clickButton('Active');
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Open task');
     expect(fixture.nativeElement.textContent).not.toContain('Done task');
 
-    fixture.componentInstance.setFilter('completed');
+    clickButton('Completed');
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).not.toContain('Open task');
@@ -75,7 +75,8 @@ describe('AppComponent', () => {
   });
 
   it('toggles todo completion', () => {
-    fixture.componentInstance.toggleTodo({ id: '1', title: 'Open task', completed: false });
+    const checkbox = fixture.nativeElement.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    checkbox.click();
 
     expect(api.update).toHaveBeenCalledWith('1', { completed: true });
   });
@@ -84,7 +85,7 @@ describe('AppComponent', () => {
     const pendingUpdate = new Subject<Todo>();
     api.update.and.returnValue(pendingUpdate.asObservable());
 
-    fixture.componentInstance.toggleTodo({ id: '1', title: 'Open task', completed: false });
+    fixture.componentInstance.store.toggleTodo({ id: '1', title: 'Open task', completed: false });
     fixture.detectChanges();
 
     const checkbox = fixture.nativeElement.querySelector('input[type="checkbox"]') as HTMLInputElement;
@@ -98,18 +99,35 @@ describe('AppComponent', () => {
   });
 
   it('edits todo titles', () => {
-    fixture.componentInstance.startEditing({ id: '1', title: 'Open task', completed: false });
-    fixture.componentInstance.editTitle.setValue('Edited task');
+    fixture.componentInstance.store.startEditing({ id: '1', title: 'Open task', completed: false });
+    fixture.detectChanges();
+    fillInput('#edit-title', 'Edited task');
 
-    fixture.componentInstance.saveEdit();
+    clickButton('Save');
 
     expect(api.update).toHaveBeenCalledWith('1', { title: 'Edited task' });
   });
 
   it('deletes todos', () => {
-    fixture.componentInstance.deleteTodo('1');
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const deleteButton = Array.from(firstTodo.querySelectorAll('button'))
+      .find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement;
+    deleteButton.click();
 
     expect(api.delete).toHaveBeenCalledWith('1');
-    expect(fixture.componentInstance.todos()).not.toContain(jasmine.objectContaining({ id: '1' }));
+    expect(fixture.componentInstance.store.todos()).not.toContain(jasmine.objectContaining({ id: '1' }));
   });
+
+  function fillInput(selector: string, value: string): void {
+    const input = fixture.nativeElement.querySelector(selector) as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+  }
+
+  function clickButton(label: string): void {
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    const button = buttons
+      .find(candidate => candidate.textContent?.trim() === label) as HTMLButtonElement;
+    button.click();
+  }
 });

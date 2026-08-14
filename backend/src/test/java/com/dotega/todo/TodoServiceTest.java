@@ -38,6 +38,16 @@ class TodoServiceTest {
     }
 
     @Test
+    void listsTodosSortedByTitleThenId() {
+        Todo bTask = new Todo(UUID.fromString("00000000-0000-0000-0000-000000000003"), "B task", false);
+        Todo secondATask = new Todo(UUID.fromString("00000000-0000-0000-0000-000000000002"), "A task", false);
+        Todo firstATask = new Todo(UUID.fromString("00000000-0000-0000-0000-000000000001"), "A task", false);
+        TodoService unorderedService = new TodoService(new StaticTodoRepository(List.of(bTask, secondATask, firstATask)));
+
+        assertThat(unorderedService.list()).containsExactly(firstATask, secondATask, bTask);
+    }
+
+    @Test
     void rejectsBlankTitleOnCreate() {
         assertThatThrownBy(() -> service.create("   "))
                 .isInstanceOf(InvalidTodoException.class)
@@ -109,32 +119,58 @@ class TodoServiceTest {
         }
 
         @Override
-        public Optional<Todo> patch(UUID id, String title, Boolean completed) {
+        public Optional<Todo> patch(UUID id, TodoPatch patch) {
             Todo existing = todos.get(id);
             if (existing == null) {
                 return Optional.empty();
             }
             Todo updated = new Todo(
                     existing.id(),
-                    title == null ? existing.title() : title,
-                    completed == null ? existing.completed() : completed
+                    patch.title() == null ? existing.title() : patch.title(),
+                    patch.completed() == null ? existing.completed() : patch.completed()
             );
             todos.put(updated.id(), updated);
             return Optional.of(updated);
         }
 
         @Override
-        public boolean update(Todo todo) {
-            if (!todos.containsKey(todo.id())) {
-                return false;
-            }
-            todos.put(todo.id(), todo);
-            return true;
+        public boolean delete(UUID id) {
+            return todos.remove(id) != null;
+        }
+    }
+
+    private static final class StaticTodoRepository implements TodoRepository {
+        private final List<Todo> todos;
+
+        StaticTodoRepository(List<Todo> todos) {
+            this.todos = todos;
+        }
+
+        @Override
+        public List<Todo> findAll() {
+            return todos;
+        }
+
+        @Override
+        public Optional<Todo> findById(UUID id) {
+            return todos.stream()
+                    .filter(todo -> todo.id().equals(id))
+                    .findFirst();
+        }
+
+        @Override
+        public void create(Todo todo) {
+            throw new UnsupportedOperationException("Static repository is read-only");
+        }
+
+        @Override
+        public Optional<Todo> patch(UUID id, TodoPatch patch) {
+            throw new UnsupportedOperationException("Static repository is read-only");
         }
 
         @Override
         public boolean delete(UUID id) {
-            return todos.remove(id) != null;
+            throw new UnsupportedOperationException("Static repository is read-only");
         }
     }
 
@@ -169,24 +205,18 @@ class TodoServiceTest {
         }
 
         @Override
-        public Optional<Todo> patch(UUID id, String title, Boolean completed) {
+        public Optional<Todo> patch(UUID id, TodoPatch patch) {
             Todo updated = todo.updateAndGet(existing -> {
                 if (existing == null || !existing.id().equals(id)) {
                     return existing;
                 }
                 return new Todo(
                         existing.id(),
-                        title == null ? existing.title() : title,
-                        completed == null ? existing.completed() : completed
+                        patch.title() == null ? existing.title() : patch.title(),
+                        patch.completed() == null ? existing.completed() : patch.completed()
                 );
             });
             return updated != null && updated.id().equals(id) ? Optional.of(updated) : Optional.empty();
-        }
-
-        @Override
-        public boolean update(Todo todo) {
-            this.todo.set(todo);
-            return true;
         }
 
         @Override

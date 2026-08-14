@@ -20,7 +20,6 @@ class JdbcTodoRepository implements TodoRepository {
         return jdbcClient.sql("""
                         select id, title, completed
                         from todos
-                        order by title, id
                         """)
                 .query(Todo.class)
                 .list();
@@ -47,7 +46,7 @@ class JdbcTodoRepository implements TodoRepository {
     }
 
     @Override
-    public Optional<Todo> patch(UUID id, String title, Boolean completed) {
+    public Optional<Todo> patch(UUID id, TodoPatch patch) {
         return jdbcClient.sql("""
                         update todos
                         set title = case when :replaceTitle then :title else title end,
@@ -57,28 +56,12 @@ class JdbcTodoRepository implements TodoRepository {
                         returning id, title, completed
                         """)
                 .param("id", id)
-                .param("replaceTitle", title != null)
-                .param("title", title)
-                .param("replaceCompleted", completed != null)
-                .param("completed", completed)
+                .param("replaceTitle", patch.title() != null)
+                .param("title", patch.title())
+                .param("replaceCompleted", patch.completed() != null)
+                .param("completed", patch.completed())
                 .query(Todo.class)
                 .optional();
-    }
-
-    @Override
-    public boolean update(Todo todo) {
-        int updatedRows = jdbcClient.sql("""
-                        update todos
-                        set title = :title,
-                            completed = :completed,
-                            updated_at = now()
-                        where id = :id
-                        """)
-                .param("id", todo.id())
-                .param("title", todo.title())
-                .param("completed", todo.completed())
-                .update();
-        return updatedRows > 0;
     }
 
     @Override

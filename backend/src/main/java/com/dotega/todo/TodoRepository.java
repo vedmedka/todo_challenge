@@ -11,9 +11,7 @@ public interface TodoRepository {
 
     void create(Todo todo);
 
-    Optional<Todo> patch(UUID id, String title, Boolean completed);
-
-    boolean update(Todo todo);
+    Optional<Todo> patch(UUID id, TodoPatch patch);
 
     boolean delete(UUID id);
 }

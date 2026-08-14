@@ -40,17 +40,13 @@ class TodoRepositoryTest {
         repository.create(second);
 
         assertThat(repository.findById(first.id())).contains(first);
-        assertThat(repository.findAll()).containsExactly(second, first);
+        assertThat(repository.findAll()).containsExactlyInAnyOrder(first, second);
     }
 
     @Test
-    void updatesAndDeletesTodosInDatabase() {
+    void deletesTodosInDatabase() {
         UUID id = UUID.randomUUID();
         repository.create(new Todo(id, "Draft", false));
-
-        Todo updated = new Todo(id, "Final", true);
-        assertThat(repository.update(updated)).isTrue();
-        assertThat(repository.findById(id)).contains(updated);
 
         assertThat(repository.delete(id)).isTrue();
         assertThat(repository.findById(id)).isEqualTo(Optional.empty());
@@ -61,16 +57,15 @@ class TodoRepositoryTest {
         UUID id = UUID.randomUUID();
         repository.create(new Todo(id, "Original", false));
 
-        assertThat(repository.patch(id, null, true)).contains(new Todo(id, "Original", true));
-        assertThat(repository.patch(id, "Edited", null)).contains(new Todo(id, "Edited", true));
-        assertThat(repository.patch(UUID.randomUUID(), "Missing", true)).isEqualTo(Optional.empty());
+        assertThat(repository.patch(id, new TodoPatch(null, true))).contains(new Todo(id, "Original", true));
+        assertThat(repository.patch(id, new TodoPatch("Edited", null))).contains(new Todo(id, "Edited", true));
+        assertThat(repository.patch(UUID.randomUUID(), new TodoPatch("Missing", true))).isEqualTo(Optional.empty());
     }
 
     @Test
     void reportsMissingRowsWithoutCreatingThem() {
         UUID missingId = UUID.randomUUID();
 
-        assertThat(repository.update(new Todo(missingId, "Missing", true))).isFalse();
         assertThat(repository.delete(missingId)).isFalse();
         assertThat(repository.findAll()).isEqualTo(List.of());
     }

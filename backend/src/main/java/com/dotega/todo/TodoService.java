@@ -34,7 +34,7 @@ public class TodoService {
 
     public Todo update(UUID id, String title, Boolean completed) {
         String nextTitle = title == null ? null : normalizeTitle(title);
-        return todoRepository.patch(id, nextTitle, completed)
+        return todoRepository.patch(id, new TodoPatch(nextTitle, completed))
                 .orElseThrow(() -> new TodoNotFoundException(id));
     }
 

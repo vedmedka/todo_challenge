@@ -35,3 +35,11 @@ Pull requests should include a concise summary, verification commands run, and s
 ## Agent-Specific Instructions
 
 Keep changes container-first and repository-scoped. Do not introduce a database unless requirements change. After frontend behavior changes, run the checks listed in [docs/setup-and-testing.md](docs/setup-and-testing.md) before reporting completion.
+
+Apply SOLID principles when changing production code:
+
+- Keep each class, service, component, and helper focused on one responsibility; extract state, validation, persistence, or UI orchestration when a file starts doing multiple jobs.
+- Prefer extension through small, explicit interfaces and value types instead of widening existing contracts with nullable or loosely typed parameters.
+- Keep abstractions substitutable: document and test repository/service contracts when behavior depends on ordering, partial updates, missing records, or error handling.
+- Do not force consumers to implement unused interface methods; split or shrink interfaces when only one operation is required.
+- Depend on stable abstractions at module boundaries, such as services depending on repositories and components depending on app services/stores instead of low-level HTTP or persistence details.
