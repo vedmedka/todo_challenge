@@ -74,8 +74,10 @@ Run all checks inside containers:
 docker compose exec -T backend mvn verify
 ./scripts/persistence-smoke.sh
 docker compose exec -T frontend npm run lint
-docker compose exec -T frontend npm test
+docker compose exec -T frontend npm run test:coverage
 docker compose exec -T frontend npm run e2e
 ```
 
-These commands verify the Spring Boot backend, Angular ESLint, Angular unit tests, and Playwright e2e tests.
+These commands verify the Spring Boot backend, Angular ESLint, Angular unit tests with coverage, and Playwright e2e tests.
+
+The frontend coverage report is generated under `frontend/coverage/todo-frontend/`. The full sweep prints the coverage percentages in its result table, records them in `latest-summary.json` and the `frontend-unit` suite summary, and copies the HTML report into the corresponding suite artifacts under `test-results/full-sweep/`.
