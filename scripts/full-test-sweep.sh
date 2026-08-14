@@ -287,6 +287,7 @@ else
   record_suite "docker-compose-up" "docker compose up -d --build --force-recreate" "passed" 0 "$compose_duration" "$compose_log_path" "$compose_summary_path" ""
   clear_source_results
   run_suite "backend" docker compose exec -T backend mvn verify
+  run_suite "backend-persistence" "$ROOT_DIR/scripts/persistence-smoke.sh"
   run_suite "frontend-lint" docker compose exec -T frontend npm run lint
   run_suite "frontend-unit" docker compose exec -T frontend npm test
   run_suite "frontend-e2e" docker compose exec -T frontend npm run e2e

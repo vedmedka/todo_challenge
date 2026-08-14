@@ -25,6 +25,15 @@ docker compose up --build
 
 The frontend runs at <http://localhost:4200>. The backend API is available at <http://localhost:8080/api/todos>.
 
+PostgreSQL 18 runs in a separate `db` container. Todo data is stored in the `todo-postgres-data` Docker volume and survives backend or database container recreation.
+
+Reset local todo data:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
 ## Run Verification
 
 Run the full test sweep and collect results:
@@ -39,6 +48,7 @@ Run all checks inside containers:
 
 ```bash
 docker compose exec -T backend mvn verify
+./scripts/persistence-smoke.sh
 docker compose exec -T frontend npm run lint
 docker compose exec -T frontend npm test
 docker compose exec -T frontend npm run e2e
