@@ -1,4 +1,5 @@
 backend/target/
+test-results/
 frontend/.angular/
 frontend/coverage/
 frontend/dist/

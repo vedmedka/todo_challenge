@@ -27,6 +27,14 @@ The frontend runs at <http://localhost:4200>. The backend API is available at <h
 
 ## Run Verification
 
+Run the full test sweep and collect results:
+
+```bash
+./scripts/full-test-sweep.sh
+```
+
+The script starts fresh Docker Compose services with `docker compose up -d --build --force-recreate`, runs all verification commands inside containers, prints a readable result table, and writes collected logs, reports, per-suite `summary.json` files, and `latest-summary.json` under `test-results/full-sweep/`.
+
 Run all checks inside containers:
 
 ```bash
