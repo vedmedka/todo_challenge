@@ -1,4 +1,4 @@
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { AppComponent } from './app.component';
@@ -78,6 +78,23 @@ describe('AppComponent', () => {
     fixture.componentInstance.toggleTodo({ id: '1', title: 'Open task', completed: false });
 
     expect(api.update).toHaveBeenCalledWith('1', { completed: true });
+  });
+
+  it('disables the checkbox while a toggle update is pending', () => {
+    const pendingUpdate = new Subject<Todo>();
+    api.update.and.returnValue(pendingUpdate.asObservable());
+
+    fixture.componentInstance.toggleTodo({ id: '1', title: 'Open task', completed: false });
+    fixture.detectChanges();
+
+    const checkbox = fixture.nativeElement.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(checkbox.disabled).toBeTrue();
+
+    pendingUpdate.next({ id: '1', title: 'Open task', completed: true });
+    pendingUpdate.complete();
+    fixture.detectChanges();
+
+    expect(checkbox.disabled).toBeFalse();
   });
 
   it('edits todo titles', () => {

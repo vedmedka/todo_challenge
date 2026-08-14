@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { finalize } from 'rxjs';
 
 import { TodoApiService } from './todo-api.service';
 import { Todo, TodoFilter } from './todo.model';
@@ -21,6 +22,7 @@ export class AppComponent implements OnInit {
   readonly filter = signal<TodoFilter>('all');
   readonly errorMessage = signal<string | null>(null);
   readonly editingId = signal<string | null>(null);
+  readonly pendingToggleIds = signal<ReadonlySet<string>>(new Set<string>());
 
   readonly visibleTodos = computed(() => {
     const selectedFilter = this.filter();
@@ -64,10 +66,21 @@ export class AppComponent implements OnInit {
   }
 
   toggleTodo(todo: Todo): void {
-    this.todoApi.update(todo.id, { completed: !todo.completed }).subscribe({
+    if (this.isTogglePending(todo.id)) {
+      return;
+    }
+
+    this.setTogglePending(todo.id, true);
+    this.todoApi.update(todo.id, { completed: !todo.completed }).pipe(
+      finalize(() => this.setTogglePending(todo.id, false))
+    ).subscribe({
       next: updated => this.replaceTodo(updated),
       error: error => this.errorMessage.set(this.extractError(error))
     });
+  }
+
+  isTogglePending(id: string): boolean {
+    return this.pendingToggleIds().has(id);
   }
 
   startEditing(todo: Todo): void {
@@ -123,6 +136,18 @@ export class AppComponent implements OnInit {
 
   private replaceTodo(updated: Todo): void {
     this.todos.update(todos => todos.map(todo => todo.id === updated.id ? updated : todo));
+  }
+
+  private setTogglePending(id: string, pending: boolean): void {
+    this.pendingToggleIds.update(ids => {
+      const nextIds = new Set(ids);
+      if (pending) {
+        nextIds.add(id);
+      } else {
+        nextIds.delete(id);
+      }
+      return nextIds;
+    });
   }
 
   private extractError(error: unknown): string {
