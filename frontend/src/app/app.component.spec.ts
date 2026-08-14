@@ -1,5 +1,5 @@
 import { of, Subject } from 'rxjs';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 
 import { AppComponent } from './app.component';
 import { TodoApiService } from './todo-api.service';
@@ -98,25 +98,125 @@ describe('AppComponent', () => {
     expect(checkbox.disabled).toBeFalse();
   });
 
-  it('edits todo titles', () => {
-    fixture.componentInstance.store.startEditing({ id: '1', title: 'Open task', completed: false });
+  it('starts inline editing from the todo title without rendering an edit button', fakeAsync(() => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+
+    expect(Array.from(firstTodo.querySelectorAll('button'))
+      .some(button => button.textContent?.trim() === 'Edit')).toBeFalse();
+
+    titleButton.click();
     fixture.detectChanges();
+    fixture.detectChanges();
+    tick(20);
+
+    const editInput = fixture.nativeElement.querySelector('#edit-title') as HTMLInputElement;
+    expect(editInput).not.toBeNull();
+    expect(document.activeElement).toBe(editInput);
+  }));
+
+  it('saves inline edits when the input loses focus', () => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+    titleButton.click();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
     fillInput('#edit-title', 'Edited task');
+    blurEditInput();
 
-    clickButton('Save');
-
+    expect(buttonExists('Save')).toBeFalse();
+    expect(buttonExists('Cancel')).toBeFalse();
     expect(api.update).toHaveBeenCalledWith('1', { title: 'Edited task' });
   });
 
-  it('deletes todos', () => {
+  it('saves inline edits when Enter is pressed', () => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+    titleButton.click();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    fillInput('#edit-title', 'Keyboard saved task');
+    dispatchEditKey('Enter');
+
+    expect(api.update).toHaveBeenCalledWith('1', { title: 'Keyboard saved task' });
+  });
+
+  it('saves inline edits and activates the next todo when ArrowDown is pressed', fakeAsync(() => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+    titleButton.click();
+    fixture.detectChanges();
+    fixture.detectChanges();
+    tick(20);
+
+    fillInput('#edit-title', 'Arrow saved task');
+    dispatchEditKey('ArrowDown');
+    fixture.detectChanges();
+    fixture.detectChanges();
+    tick(20);
+
+    const editInput = fixture.nativeElement.querySelector('#edit-title') as HTMLInputElement;
+    expect(api.update).toHaveBeenCalledWith('1', { title: 'Arrow saved task' });
+    expect(fixture.componentInstance.store.editingId()).toBe('2');
+    expect(editInput.value).toBe('Done task');
+    expect(document.activeElement).toBe(editInput);
+  }));
+
+  it('cancels inline edits when Escape is pressed', () => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+    titleButton.click();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    fillInput('#edit-title', 'Escaped task');
+    dispatchEditKey('Escape');
+    fixture.detectChanges();
+
+    expect(api.update).not.toHaveBeenCalledWith('1', { title: 'Escaped task' });
+    expect(fixture.nativeElement.querySelector('#edit-title')).toBeNull();
+  });
+
+  it('deletes todos from inline edit mode without saving the draft', fakeAsync(() => {
+    const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
+    const titleButton = firstTodo.querySelector('.todo-title-button') as HTMLButtonElement;
+    titleButton.click();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    fillInput('#edit-title', 'Draft before delete');
+    const deleteButton = Array.from(firstTodo.querySelectorAll('button'))
+      .find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement;
+    deleteButton.click();
+    fixture.detectChanges();
+
+    expect(api.update).not.toHaveBeenCalledWith('1', { title: 'Draft before delete' });
+    expect(api.delete).toHaveBeenCalledWith('1');
+
+    tick(180);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.store.todos()).not.toContain(jasmine.objectContaining({ id: '1' }));
+  }));
+
+  it('fades deleted todos out before removing them', fakeAsync(() => {
     const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
     const deleteButton = Array.from(firstTodo.querySelectorAll('button'))
       .find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement;
     deleteButton.click();
+    fixture.detectChanges();
 
     expect(api.delete).toHaveBeenCalledWith('1');
+    expect(firstTodo.classList).toContain('exiting');
+    expect(fixture.componentInstance.store.todos()).toContain(jasmine.objectContaining({ id: '1' }));
+
+    tick(180);
+    fixture.detectChanges();
+
     expect(fixture.componentInstance.store.todos()).not.toContain(jasmine.objectContaining({ id: '1' }));
-  });
+  }));
 
   function fillInput(selector: string, value: string): void {
     const input = fixture.nativeElement.querySelector(selector) as HTMLInputElement;
@@ -124,10 +224,25 @@ describe('AppComponent', () => {
     input.dispatchEvent(new Event('input'));
   }
 
+  function dispatchEditKey(key: string): void {
+    const input = fixture.nativeElement.querySelector('#edit-title') as HTMLInputElement;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key }));
+  }
+
+  function blurEditInput(): void {
+    const input = fixture.nativeElement.querySelector('#edit-title') as HTMLInputElement;
+    input.dispatchEvent(new FocusEvent('blur'));
+  }
+
   function clickButton(label: string): void {
     const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
     const button = buttons
       .find(candidate => candidate.textContent?.trim() === label) as HTMLButtonElement;
     button.click();
+  }
+
+  function buttonExists(label: string): boolean {
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    return buttons.some(candidate => candidate.textContent?.trim() === label);
   }
 });

@@ -33,11 +33,16 @@
 
     <ul class="todo-list" aria-label="Todos">
       @for (todo of store.visibleTodos(); track store.trackTodo($index, todo)) {
-        <li class="todo-item" data-testid="todo-item" [class.done]="todo.completed">
+        <li
+          class="todo-item"
+          data-testid="todo-item"
+          [class.done]="todo.completed"
+          [class.exiting]="store.isTodoExiting(todo.id)"
+        >
           <input
             type="checkbox"
             [checked]="todo.completed"
-            [disabled]="store.isTogglePending(todo.id)"
+            [disabled]="store.isTogglePending(todo.id) || store.isTodoExiting(todo.id)"
             (change)="store.toggleTodo(todo)"
             aria-label="Toggle complete"
           >
@@ -45,19 +50,45 @@
           @if (store.editingId() === todo.id) {
             <label class="sr-only" for="edit-title">Edit todo title</label>
             <input
+              #editTitleInput
               id="edit-title"
               class="edit-input"
               type="text"
               [value]="store.editTitle()"
               (input)="store.setEditTitle($any($event.target).value)"
+              (blur)="saveEditOnBlur()"
+              (keydown.enter)="store.saveEdit()"
+              (keydown.arrowup)="saveEditAndMove($event, 'previous')"
+              (keydown.arrowdown)="saveEditAndMove($event, 'next')"
+              (keydown.escape)="store.cancelEdit()"
               autocomplete="off"
             >
-            <button type="button" (click)="store.saveEdit()">Save</button>
-            <button type="button" class="secondary" (click)="store.cancelEdit()">Cancel</button>
+            <button
+              type="button"
+              class="danger"
+              [disabled]="store.isDeletePending(todo.id) || store.isTodoExiting(todo.id)"
+              (mousedown)="$event.preventDefault()"
+              (click)="store.deleteTodo(todo.id)"
+            >
+              Delete
+            </button>
           } @else {
-            <span class="todo-title">{{ todo.title }}</span>
-            <button type="button" class="secondary" (click)="store.startEditing(todo)">Edit</button>
-            <button type="button" class="danger" (click)="store.deleteTodo(todo.id)">Delete</button>
+            <button
+              type="button"
+              class="todo-title-button"
+              [disabled]="store.isTodoExiting(todo.id)"
+              (click)="store.startEditing(todo)"
+            >
+              {{ todo.title }}
+            </button>
+            <button
+              type="button"
+              class="danger"
+              [disabled]="store.isDeletePending(todo.id) || store.isTodoExiting(todo.id)"
+              (click)="store.deleteTodo(todo.id)"
+            >
+              Delete
+            </button>
           }
         </li>
       } @empty {

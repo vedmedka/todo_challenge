@@ -87,6 +87,11 @@ button.active {
   border-color: #1f6f4a;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .error {
   margin: 12px 0 0;
   color: #b42318;
@@ -109,7 +114,7 @@ button.active {
 
 .todo-item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   min-height: 48px;
@@ -119,20 +124,43 @@ button.active {
   background: #fbfcfe;
 }
 
-.todo-item.done .todo-title {
+.todo-item.exiting {
+  animation: todo-exit 180ms ease forwards;
+  pointer-events: none;
+}
+
+.todo-item.done .todo-title-button {
   color: #657084;
   text-decoration: line-through;
 }
 
-.todo-title {
+.todo-title-button {
   min-width: 0;
+  justify-self: stretch;
+  border-color: transparent;
+  background: transparent;
+  color: #20242c;
+  padding: 6px 4px;
+  text-align: left;
   overflow-wrap: anywhere;
+}
+
+.todo-title-button:hover,
+.todo-title-button:focus-visible {
+  background: #eef2f7;
 }
 
 .empty {
   padding: 24px 12px;
   color: #657084;
   text-align: center;
+}
+
+@keyframes todo-exit {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 .sr-only {
@@ -163,5 +191,12 @@ button.active {
 
   .todo-item input[type="checkbox"] {
     justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .todo-item.exiting {
+    animation: none;
+    opacity: 0;
   }
 }

@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { of, Subject, throwError } from 'rxjs';
 
 import { TodoApiService } from './todo-api.service';
@@ -77,6 +77,21 @@ describe('TodoStore', () => {
     expect(store.isTogglePending('1')).toBeFalse();
   });
 
+  it('keeps toggled todos visible while they fade out of the current filter', fakeAsync(() => {
+    store.loadTodos();
+    store.setFilter('active');
+
+    store.toggleTodo({ id: '1', title: 'Open task', completed: false });
+
+    expect(store.isTodoExiting('1')).toBeTrue();
+    expect(store.visibleTodos()).toEqual([{ id: '1', title: 'Open task', completed: false }]);
+
+    tick(180);
+
+    expect(store.isTodoExiting('1')).toBeFalse();
+    expect(store.visibleTodos()).toEqual([]);
+  }));
+
   it('edits and cancels todo titles', () => {
     store.loadTodos();
     store.startEditing({ id: '1', title: 'Open task', completed: false });
@@ -95,15 +110,53 @@ describe('TodoStore', () => {
     expect(store.editTitle()).toBe('');
   });
 
-  it('deletes todos and clears edit state for the deleted todo', () => {
+  it('saves edits and moves to the next todo', () => {
+    store.loadTodos();
+    store.startEditing({ id: '1', title: 'Open task', completed: false });
+    store.setEditTitle('  Saved first task  ');
+
+    store.saveEditAndMove('next');
+
+    expect(api.update).toHaveBeenCalledWith('1', { title: 'Saved first task' });
+    expect(store.todos()).toContain(jasmine.objectContaining({ id: '1', title: 'Saved first task' }));
+    expect(store.editingId()).toBe('2');
+    expect(store.editTitle()).toBe('Done task');
+  });
+
+  it('wraps edit navigation at the top and bottom of the visible list', () => {
+    store.loadTodos();
+    store.startEditing({ id: '1', title: 'Open task', completed: false });
+    store.setEditTitle('Top saved task');
+
+    store.saveEditAndMove('previous');
+
+    expect(api.update).toHaveBeenCalledWith('1', { title: 'Top saved task' });
+    expect(store.editingId()).toBe('2');
+    expect(store.editTitle()).toBe('Done task');
+
+    store.setEditTitle('Bottom saved task');
+    store.saveEditAndMove('next');
+
+    expect(api.update).toHaveBeenCalledWith('2', { title: 'Bottom saved task' });
+    expect(store.editingId()).toBe('1');
+    expect(store.editTitle()).toBe('Top saved task');
+  });
+
+  it('deletes todos after the fade-out state completes and clears edit state for the deleted todo', fakeAsync(() => {
     store.loadTodos();
     store.startEditing({ id: '1', title: 'Open task', completed: false });
 
     store.deleteTodo('1');
 
+    expect(store.isTodoExiting('1')).toBeTrue();
+    expect(store.todos()).toContain(jasmine.objectContaining({ id: '1' }));
+
+    tick(180);
+
     expect(store.todos()).toEqual([{ id: '2', title: 'Done task', completed: true }]);
+    expect(store.isTodoExiting('1')).toBeFalse();
     expect(store.editingId()).toBeNull();
-  });
+  }));
 
   it('stores API error messages', () => {
     api.list.and.returnValue(throwError(() => ({ error: { message: 'Could not reach API' } })));
