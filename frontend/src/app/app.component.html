@@ -1,0 +1,65 @@
+<main class="todo-shell">
+  <section class="todo-panel" aria-labelledby="todo-title">
+    <header class="todo-header">
+      <div>
+        <p class="eyebrow">Container TODO</p>
+        <h1 id="todo-title">TODO</h1>
+      </div>
+      <span class="count">{{ todos().length }}</span>
+    </header>
+
+    <form class="new-todo" (submit)="$event.preventDefault(); createTodo()">
+      <label class="sr-only" for="new-title">New todo title</label>
+      <input
+        id="new-title"
+        type="text"
+        [formControl]="newTitle"
+        placeholder="Add a task"
+        autocomplete="off"
+      >
+      <button type="submit">Add</button>
+    </form>
+
+    @if (errorMessage(); as message) {
+      <p class="error" role="alert">{{ message }}</p>
+    }
+
+    <div class="filters" aria-label="Todo filters">
+      <button type="button" [class.active]="filter() === 'all'" (click)="setFilter('all')">All</button>
+      <button type="button" [class.active]="filter() === 'active'" (click)="setFilter('active')">Active</button>
+      <button type="button" [class.active]="filter() === 'completed'" (click)="setFilter('completed')">Completed</button>
+    </div>
+
+    <ul class="todo-list" aria-label="Todos">
+      @for (todo of visibleTodos(); track trackTodo($index, todo)) {
+        <li class="todo-item" data-testid="todo-item" [class.done]="todo.completed">
+          <input
+            type="checkbox"
+            [checked]="todo.completed"
+            (change)="toggleTodo(todo)"
+            aria-label="Toggle complete"
+          >
+
+          @if (editingId() === todo.id) {
+            <label class="sr-only" for="edit-title">Edit todo title</label>
+            <input
+              id="edit-title"
+              class="edit-input"
+              type="text"
+              [formControl]="editTitle"
+              autocomplete="off"
+            >
+            <button type="button" (click)="saveEdit()">Save</button>
+            <button type="button" class="secondary" (click)="cancelEdit()">Cancel</button>
+          } @else {
+            <span class="todo-title">{{ todo.title }}</span>
+            <button type="button" class="secondary" (click)="startEditing(todo)">Edit</button>
+            <button type="button" class="danger" (click)="deleteTodo(todo.id)">Delete</button>
+          }
+        </li>
+      } @empty {
+        <li class="empty">No todos</li>
+      }
+    </ul>
+  </section>
+</main>
