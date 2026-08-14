@@ -68,6 +68,21 @@ describe('TodoStore', () => {
     expect(store.visibleTodos()).toEqual([{ id: '1', title: 'Open task', completed: false }]);
   });
 
+  it('derives active and completed todo groups plus active counts for each list', () => {
+    api.listTodos.withArgs('list-2').and.returnValue(of([
+      { id: '3', title: 'Work active', completed: false },
+      { id: '4', title: 'Work done', completed: true },
+      { id: '5', title: 'Follow up', completed: false }
+    ]));
+
+    store.loadTodos();
+
+    expect(store.activeTodos()).toEqual([{ id: '1', title: 'Open task', completed: false }]);
+    expect(store.completedTodos()).toEqual([{ id: '2', title: 'Done task', completed: true }]);
+    expect(store.activeTodoCountForList('list-1')).toBe(1);
+    expect(store.activeTodoCountForList('list-2')).toBe(2);
+  });
+
   it('selects a list and loads only its todos', () => {
     api.listTodos.withArgs('list-2').and.returnValue(of([{ id: '4', title: 'Work task', completed: false }]));
 
@@ -234,6 +249,7 @@ describe('TodoStore', () => {
     tick(180);
 
     expect(store.todos()).toEqual([{ id: '2', title: 'Done task', completed: true }]);
+    expect(store.activeTodoCountForList('list-1')).toBe(0);
     expect(store.isTodoExiting('1')).toBeFalse();
     expect(store.editingId()).toBeNull();
   }));

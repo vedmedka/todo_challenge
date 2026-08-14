@@ -52,16 +52,32 @@ describe('AppComponent', () => {
   it('renders todos loaded from the backend', () => {
     const text = fixture.nativeElement.textContent as string;
 
+    expect(text).toContain('Todos');
+    expect(text).toContain('2 LISTS');
     expect(text).toContain('Inbox');
     expect(text).toContain('Work');
     expect(text).toContain('Open task');
     expect(text).toContain('Done task');
   });
 
+  it('renders the ledger task sheet with active and done groups', () => {
+    const text = fixture.nativeElement.textContent as string;
+    const newTodoInput = fixture.nativeElement.querySelector('#new-title') as HTMLInputElement;
+    const activeItems = fixture.nativeElement.querySelectorAll('[data-testid="todo-item"][data-status="active"]');
+    const doneItems = fixture.nativeElement.querySelectorAll('[data-testid="todo-item"][data-status="done"]');
+
+    expect(newTodoInput.placeholder).toBe('Write a to-do and press enter');
+    expect(text).toContain('1/2 DONE');
+    expect(text).toContain('DONE');
+    expect(activeItems.length).toBe(1);
+    expect(doneItems.length).toBe(1);
+    expect((doneItems[0] as HTMLElement).textContent).toContain('Done task');
+  });
+
   it('creates and selects todo lists from the sidebar', () => {
     fillInput('#new-list-title', 'Errands');
 
-    clickButton('Add list');
+    submitForm('.new-list');
     fixture.detectChanges();
 
     expect(api.createTodoList).toHaveBeenCalledWith('Errands');
@@ -70,7 +86,7 @@ describe('AppComponent', () => {
   });
 
   it('renames todo lists inline', () => {
-    getButtonWithin(getListItem('Inbox'), 'Rename').click();
+    getButtonWithin(getListItem('Inbox'), 'Rename list').click();
     fixture.detectChanges();
 
     fillInput('#edit-list-title', 'Personal');
@@ -101,7 +117,7 @@ describe('AppComponent', () => {
   it('validates empty todo titles before creating', () => {
     fillInput('#new-title', '   ');
 
-    clickButton('Add');
+    submitForm('.new-todo');
     fixture.detectChanges();
 
     expect(api.createTodo).not.toHaveBeenCalled();
@@ -111,25 +127,19 @@ describe('AppComponent', () => {
   it('creates todos and adds them to the list', () => {
     fillInput('#new-title', 'New task');
 
-    clickButton('Add');
+    submitForm('.new-todo');
     fixture.detectChanges();
 
     expect(api.createTodo).toHaveBeenCalledWith('list-1', 'New task');
     expect(fixture.nativeElement.textContent).toContain('New task');
   });
 
-  it('filters active and completed todos', () => {
-    clickButton('Active');
-    fixture.detectChanges();
+  it('keeps active and completed todos visible at the same time', () => {
+    const activeItems = fixture.nativeElement.querySelectorAll('[data-testid="todo-item"][data-status="active"]');
+    const doneItems = fixture.nativeElement.querySelectorAll('[data-testid="todo-item"][data-status="done"]');
 
-    expect(fixture.nativeElement.textContent).toContain('Open task');
-    expect(fixture.nativeElement.textContent).not.toContain('Done task');
-
-    clickButton('Completed');
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.textContent).not.toContain('Open task');
-    expect(fixture.nativeElement.textContent).toContain('Done task');
+    expect((activeItems[0] as HTMLElement).textContent).toContain('Open task');
+    expect((doneItems[0] as HTMLElement).textContent).toContain('Done task');
   });
 
   it('toggles todo completion', () => {
@@ -153,7 +163,8 @@ describe('AppComponent', () => {
     pendingUpdate.complete();
     fixture.detectChanges();
 
-    expect(checkbox.disabled).toBeFalse();
+    const completedCheckbox = getListItemByText('Open task').querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(completedCheckbox.disabled).toBeFalse();
   });
 
   it('starts inline editing from the todo title without rendering an edit button', fakeAsync(() => {
@@ -245,8 +256,7 @@ describe('AppComponent', () => {
     fixture.detectChanges();
 
     fillInput('#edit-title', 'Draft before delete');
-    const deleteButton = Array.from(firstTodo.querySelectorAll('button'))
-      .find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement;
+    const deleteButton = getButtonWithin(firstTodo, 'Delete todo');
     deleteButton.click();
     fixture.detectChanges();
 
@@ -261,8 +271,7 @@ describe('AppComponent', () => {
 
   it('fades deleted todos out before removing them', fakeAsync(() => {
     const firstTodo = fixture.nativeElement.querySelector('[data-testid="todo-item"]') as HTMLElement;
-    const deleteButton = Array.from(firstTodo.querySelectorAll('button'))
-      .find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement;
+    const deleteButton = getButtonWithin(firstTodo, 'Delete todo');
     deleteButton.click();
     fixture.detectChanges();
 
@@ -297,11 +306,9 @@ describe('AppComponent', () => {
     input.dispatchEvent(new FocusEvent('blur'));
   }
 
-  function clickButton(label: string): void {
-    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
-    const button = buttons
-      .find(candidate => candidate.textContent?.trim() === label) as HTMLButtonElement;
-    button.click();
+  function submitForm(selector: string): void {
+    const form = fixture.nativeElement.querySelector(selector) as HTMLFormElement;
+    form.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
   }
 
   function getListItem(label: string): HTMLElement {
@@ -310,9 +317,15 @@ describe('AppComponent', () => {
       .find(item => item.textContent?.includes(label)) as HTMLElement;
   }
 
+  function getListItemByText(label: string): HTMLElement {
+    const items = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="todo-item"]')) as HTMLElement[];
+    return items
+      .find(item => item.textContent?.includes(label)) as HTMLElement;
+  }
+
   function getButtonWithin(element: HTMLElement, label: string): HTMLButtonElement {
     return Array.from(element.querySelectorAll('button'))
-      .find(button => button.textContent?.trim() === label) as HTMLButtonElement;
+      .find(button => (button.getAttribute('aria-label') ?? button.textContent?.trim()) === label) as HTMLButtonElement;
   }
 
   function buttonExists(label: string): boolean {

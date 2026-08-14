@@ -29,11 +29,14 @@ export class TodoStore {
   readonly pendingToggleIds = signal<ReadonlySet<string>>(new Set<string>());
   readonly pendingDeleteIds = signal<ReadonlySet<string>>(new Set<string>());
   readonly exitingTodoIds = signal<ReadonlySet<string>>(new Set<string>());
+  readonly activeTodoCounts = signal<Readonly<Record<string, number>>>({});
 
   readonly selectedTodoList = computed(() => {
     const selectedListId = this.selectedListId();
     return this.todoLists().find(list => list.id === selectedListId) ?? null;
   });
+  readonly activeTodos = computed(() => this.todos().filter(todo => !todo.completed));
+  readonly completedTodos = computed(() => this.todos().filter(todo => todo.completed));
   readonly visibleTodos = computed(() => filterTodos(this.todos(), this.filter()));
 
   loadTodos(): void {
@@ -51,9 +54,14 @@ export class TodoStore {
         } else {
           this.todos.set([]);
         }
+        this.refreshActiveCounts(lists, selectedList);
       },
       error: error => this.errorMessage.set(extractTodoErrorMessage(error))
     });
+  }
+
+  activeTodoCountForList(id: string): number {
+    return this.activeTodoCounts()[id] ?? 0;
   }
 
   setNewListTitle(title: string): void {
@@ -84,6 +92,7 @@ export class TodoStore {
         this.todoLists.update(lists => [...lists, list]);
         this.selectedListId.set(list.id);
         this.todos.set([]);
+        this.setActiveTodoCount(list.id, 0);
         this.newListTitle.set('');
         this.cancelTodoListEdit();
         this.errorMessage.set(null);
@@ -150,6 +159,7 @@ export class TodoStore {
       next: () => {
         const remainingLists = this.todoLists().filter(list => list.id !== id);
         this.todoLists.set(remainingLists);
+        this.removeActiveTodoCount(id);
 
         if (this.editingListId() === id) {
           this.cancelTodoListEdit();
@@ -192,6 +202,7 @@ export class TodoStore {
     this.todoApi.createTodo(selectedListId, title).subscribe({
       next: todo => {
         this.todos.update(todos => [...todos, todo]);
+        this.updateActiveCountForSelectedTodos();
         this.newTitle.set('');
         this.errorMessage.set(null);
       },
@@ -332,7 +343,10 @@ export class TodoStore {
         if (this.editingId() === id) {
           this.cancelEdit();
         }
-        this.startTodoExit(id, () => this.todos.update(todos => todos.filter(todo => todo.id !== id)));
+        this.startTodoExit(id, () => {
+          this.todos.update(todos => todos.filter(todo => todo.id !== id));
+          this.updateActiveCountForSelectedTodos();
+        });
       },
       error: error => this.errorMessage.set(extractTodoErrorMessage(error))
     });
@@ -344,6 +358,7 @@ export class TodoStore {
 
   private replaceTodo(updated: Todo): void {
     this.todos.update(todos => todos.map(todo => todo.id === updated.id ? updated : todo));
+    this.updateActiveCountForSelectedTodos();
   }
 
   private shouldFadeBeforeReplacing(current: Todo, updated: Todo): boolean {
@@ -380,6 +395,7 @@ export class TodoStore {
   private loadTodosForList(todoListId: string): void {
     this.todoApi.listTodos(todoListId).subscribe({
       next: todos => {
+        this.setActiveTodoCount(todoListId, this.countActiveTodos(todos));
         if (this.selectedListId() === todoListId) {
           this.todos.set(todos);
           this.errorMessage.set(null);
@@ -387,6 +403,43 @@ export class TodoStore {
       },
       error: error => this.errorMessage.set(extractTodoErrorMessage(error))
     });
+  }
+
+  private refreshActiveCounts(lists: TodoList[], selectedListId: string | null): void {
+    for (const list of lists) {
+      if (list.id === selectedListId) {
+        continue;
+      }
+
+      this.todoApi.listTodos(list.id).subscribe({
+        next: todos => this.setActiveTodoCount(list.id, this.countActiveTodos(todos)),
+        error: error => this.errorMessage.set(extractTodoErrorMessage(error))
+      });
+    }
+  }
+
+  private updateActiveCountForSelectedTodos(): void {
+    const selectedListId = this.selectedListId();
+    if (!selectedListId) {
+      return;
+    }
+
+    this.setActiveTodoCount(selectedListId, this.countActiveTodos(this.todos()));
+  }
+
+  private setActiveTodoCount(listId: string, count: number): void {
+    this.activeTodoCounts.update(counts => ({ ...counts, [listId]: count }));
+  }
+
+  private removeActiveTodoCount(listId: string): void {
+    this.activeTodoCounts.update(counts => {
+      const { [listId]: _removed, ...remainingCounts } = counts;
+      return remainingCounts;
+    });
+  }
+
+  private countActiveTodos(todos: Todo[]): number {
+    return todos.filter(todo => !todo.completed).length;
   }
 
   private setListDeletePending(id: string, pending: boolean): void {
