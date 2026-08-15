@@ -11,7 +11,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@angular/common": "21.2.20",
+    "@angular/common": "22.1.1",
     "@angular/compiler": "21.2.20",
     "@angular/core": "21.2.20",
     "@angular/forms": "21.2.20",
