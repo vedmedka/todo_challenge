@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 
 ENV CHROME_BIN=/usr/bin/chromium \
     PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
