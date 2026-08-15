@@ -3,25 +3,21 @@ package com.dotega.todo.todos.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import com.dotega.todo.common.domain.InvalidTodoException;
+import com.dotega.todo.testing.BlockingReadTodoRepository;
+import com.dotega.todo.testing.InMemoryTodoListRepository;
+import com.dotega.todo.testing.InMemoryTodoRepository;
+import com.dotega.todo.testing.StaticTodoRepository;
 import com.dotega.todo.todolists.application.TodoListNotFoundException;
-import com.dotega.todo.todolists.application.TodoListRepository;
 import com.dotega.todo.todolists.domain.TodoList;
 import com.dotega.todo.todos.domain.Todo;
-import com.dotega.todo.todos.domain.TodoPatch;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -69,7 +65,7 @@ class TodoServiceTest {
     void updatesTitleAndCompletedState() {
         Todo todo = service.create(listId, "Draft");
 
-        Todo updated = service.update(listId, todo.id(), "  Final title  ", true);
+        Todo updated = service.update(new UpdateTodoCommand(listId, todo.id(), "  Final title  ", true));
 
         assertThat(updated.id()).isEqualTo(todo.id());
         assertThat(updated.title()).isEqualTo("Final title");
@@ -78,17 +74,30 @@ class TodoServiceTest {
     }
 
     @Test
+    void throwsWhenTodoDoesNotExistOnGetAndUpdate() {
+        UUID missingTodoId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.get(listId, missingTodoId))
+                .isInstanceOf(TodoNotFoundException.class)
+                .hasMessage("Todo not found: " + missingTodoId);
+
+        assertThatThrownBy(() -> service.update(new UpdateTodoCommand(listId, missingTodoId, "Edited", null)))
+                .isInstanceOf(TodoNotFoundException.class)
+                .hasMessage("Todo not found: " + missingTodoId);
+    }
+
+    @Test
     void rejectsBlankTitleOnUpdate() {
         Todo todo = service.create(listId, "Keep");
 
-        assertThatThrownBy(() -> service.update(listId, todo.id(), " ", null))
+        assertThatThrownBy(() -> service.update(new UpdateTodoCommand(listId, todo.id(), " ", null)))
                 .isInstanceOf(InvalidTodoException.class)
                 .hasMessage("Todo title must not be empty");
     }
 
     @Test
     void throwsWhenTodoDoesNotExist() {
-        assertThatThrownBy(() -> service.delete(listId, java.util.UUID.randomUUID()))
+        assertThatThrownBy(() -> service.delete(listId, UUID.randomUUID()))
                 .isInstanceOf(TodoNotFoundException.class);
     }
 
@@ -101,6 +110,15 @@ class TodoServiceTest {
                 .hasMessage("Todo list not found: " + missingListId);
         assertThatThrownBy(() -> service.create(missingListId, "Draft"))
                 .isInstanceOf(TodoListNotFoundException.class);
+        assertThatThrownBy(() -> service.get(missingListId, UUID.randomUUID()))
+                .isInstanceOf(TodoListNotFoundException.class)
+                .hasMessage("Todo list not found: " + missingListId);
+        assertThatThrownBy(() -> service.update(new UpdateTodoCommand(missingListId, UUID.randomUUID(), "Edited", null)))
+                .isInstanceOf(TodoListNotFoundException.class)
+                .hasMessage("Todo list not found: " + missingListId);
+        assertThatThrownBy(() -> service.delete(missingListId, UUID.randomUUID()))
+                .isInstanceOf(TodoListNotFoundException.class)
+                .hasMessage("Todo list not found: " + missingListId);
     }
 
     @Test
@@ -110,188 +128,13 @@ class TodoServiceTest {
         Todo todo = concurrentService.create(listId, "Original");
 
         try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
-            Future<Todo> titleUpdate = executor.submit(() -> concurrentService.update(listId, todo.id(), "Edited", null));
-            Future<Todo> completedUpdate = executor.submit(() -> concurrentService.update(listId, todo.id(), null, true));
+            Future<Todo> titleUpdate = executor.submit(() -> concurrentService.update(new UpdateTodoCommand(listId, todo.id(), "Edited", null)));
+            Future<Todo> completedUpdate = executor.submit(() -> concurrentService.update(new UpdateTodoCommand(listId, todo.id(), null, true)));
 
             titleUpdate.get(2, TimeUnit.SECONDS);
             completedUpdate.get(2, TimeUnit.SECONDS);
         }
 
         assertThat(repository.current()).isEqualTo(new Todo(todo.id(), "Edited", true));
-    }
-
-    private static final class InMemoryTodoRepository implements TodoRepository {
-        private final LinkedHashMap<UUID, Todo> todos = new LinkedHashMap<>();
-
-        @Override
-        public List<Todo> findAll(UUID listId) {
-            return todos.values().stream()
-                    .sorted(Comparator.comparing(Todo::title).thenComparing(Todo::id))
-                    .toList();
-        }
-
-        @Override
-        public Optional<Todo> findById(UUID listId, UUID id) {
-            return Optional.ofNullable(todos.get(id));
-        }
-
-        @Override
-        public void create(UUID listId, Todo todo) {
-            todos.put(todo.id(), todo);
-        }
-
-        @Override
-        public Optional<Todo> patch(UUID listId, UUID id, TodoPatch patch) {
-            Todo existing = todos.get(id);
-            if (existing == null) {
-                return Optional.empty();
-            }
-            Todo updated = new Todo(
-                    existing.id(),
-                    patch.title() == null ? existing.title() : patch.title(),
-                    patch.completed() == null ? existing.completed() : patch.completed()
-            );
-            todos.put(updated.id(), updated);
-            return Optional.of(updated);
-        }
-
-        @Override
-        public boolean delete(UUID listId, UUID id) {
-            return todos.remove(id) != null;
-        }
-    }
-
-    private static final class StaticTodoRepository implements TodoRepository {
-        private final List<Todo> todos;
-
-        StaticTodoRepository(List<Todo> todos) {
-            this.todos = todos;
-        }
-
-        @Override
-        public List<Todo> findAll(UUID listId) {
-            return todos;
-        }
-
-        @Override
-        public Optional<Todo> findById(UUID listId, UUID id) {
-            return todos.stream()
-                    .filter(todo -> todo.id().equals(id))
-                    .findFirst();
-        }
-
-        @Override
-        public void create(UUID listId, Todo todo) {
-            throw new UnsupportedOperationException("Static repository is read-only");
-        }
-
-        @Override
-        public Optional<Todo> patch(UUID listId, UUID id, TodoPatch patch) {
-            throw new UnsupportedOperationException("Static repository is read-only");
-        }
-
-        @Override
-        public boolean delete(UUID listId, UUID id) {
-            throw new UnsupportedOperationException("Static repository is read-only");
-        }
-    }
-
-    private static final class BlockingReadTodoRepository implements TodoRepository {
-        private final AtomicReference<Todo> todo = new AtomicReference<>();
-        private final AtomicInteger reads = new AtomicInteger();
-        private final CountDownLatch concurrentReads = new CountDownLatch(2);
-
-        Todo current() {
-            return todo.get();
-        }
-
-        @Override
-        public List<Todo> findAll(UUID listId) {
-            Todo current = todo.get();
-            return current == null ? List.of() : List.of(current);
-        }
-
-        @Override
-        public Optional<Todo> findById(UUID listId, UUID id) {
-            Todo current = todo.get();
-            if (current != null && current.id().equals(id) && reads.incrementAndGet() <= 2) {
-                concurrentReads.countDown();
-                awaitConcurrentReads();
-            }
-            return current != null && current.id().equals(id) ? Optional.of(current) : Optional.empty();
-        }
-
-        @Override
-        public void create(UUID listId, Todo todo) {
-            this.todo.set(todo);
-        }
-
-        @Override
-        public Optional<Todo> patch(UUID listId, UUID id, TodoPatch patch) {
-            Todo updated = todo.updateAndGet(existing -> {
-                if (existing == null || !existing.id().equals(id)) {
-                    return existing;
-                }
-                return new Todo(
-                        existing.id(),
-                        patch.title() == null ? existing.title() : patch.title(),
-                        patch.completed() == null ? existing.completed() : patch.completed()
-                );
-            });
-            return updated != null && updated.id().equals(id) ? Optional.of(updated) : Optional.empty();
-        }
-
-        @Override
-        public boolean delete(UUID listId, UUID id) {
-            return this.todo.getAndSet(null) != null;
-        }
-
-        private void awaitConcurrentReads() {
-            try {
-                if (!concurrentReads.await(2, TimeUnit.SECONDS)) {
-                    throw new AssertionError("Timed out waiting for concurrent reads");
-                }
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new AssertionError("Interrupted while waiting for concurrent reads", exception);
-            }
-        }
-    }
-
-    private static final class InMemoryTodoListRepository implements TodoListRepository {
-        private final LinkedHashMap<UUID, TodoList> lists = new LinkedHashMap<>();
-
-        @Override
-        public List<TodoList> findAll() {
-            return lists.values().stream()
-                    .sorted(Comparator.comparing(TodoList::title).thenComparing(TodoList::id))
-                    .toList();
-        }
-
-        @Override
-        public Optional<TodoList> findById(UUID id) {
-            return Optional.ofNullable(lists.get(id));
-        }
-
-        @Override
-        public void create(TodoList list) {
-            lists.put(list.id(), list);
-        }
-
-        @Override
-        public Optional<TodoList> patch(UUID id, String title) {
-            TodoList existing = lists.get(id);
-            if (existing == null) {
-                return Optional.empty();
-            }
-            TodoList updated = new TodoList(existing.id(), title);
-            lists.put(updated.id(), updated);
-            return Optional.of(updated);
-        }
-
-        @Override
-        public boolean delete(UUID id) {
-            return lists.remove(id) != null;
-        }
     }
 }

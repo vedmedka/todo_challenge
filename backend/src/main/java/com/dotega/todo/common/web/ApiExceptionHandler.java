@@ -8,6 +8,7 @@ import com.dotega.todo.todos.application.TodoNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -16,6 +17,15 @@ class ApiExceptionHandler {
     @ExceptionHandler(InvalidTodoException.class)
     ResponseEntity<ApiError> handleInvalidTodo(InvalidTodoException exception, HttpServletRequest request) {
         return error(HttpStatus.BAD_REQUEST, exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    ResponseEntity<ApiError> handleInvalidRequest(MethodArgumentNotValidException exception, HttpServletRequest request) {
+        String message = exception.getBindingResult().getFieldErrors().stream()
+                .findFirst()
+                .map(fieldError -> fieldError.getDefaultMessage())
+                .orElse("Invalid request");
+        return error(HttpStatus.BAD_REQUEST, message, request);
     }
 
     @ExceptionHandler(TodoNotFoundException.class)

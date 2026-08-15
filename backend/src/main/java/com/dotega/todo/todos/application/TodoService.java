@@ -4,7 +4,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
-import com.dotega.todo.common.domain.InvalidTodoException;
+import com.dotega.todo.common.domain.TodoTitles;
 import com.dotega.todo.todolists.application.TodoListNotFoundException;
 import com.dotega.todo.todolists.application.TodoListRepository;
 import com.dotega.todo.todos.domain.Todo;
@@ -36,17 +36,17 @@ public class TodoService {
 
     public Todo create(UUID todoListId, String title) {
         requireTodoList(todoListId);
-        String normalizedTitle = normalizeTitle(title);
+        String normalizedTitle = TodoTitles.requireTodoTitle(title);
         Todo todo = new Todo(UUID.randomUUID(), normalizedTitle, false);
         todoRepository.create(todoListId, todo);
         return todo;
     }
 
-    public Todo update(UUID todoListId, UUID id, String title, Boolean completed) {
-        requireTodoList(todoListId);
-        String nextTitle = title == null ? null : normalizeTitle(title);
-        return todoRepository.patch(todoListId, id, new TodoPatch(nextTitle, completed))
-                .orElseThrow(() -> new TodoNotFoundException(id));
+    public Todo update(UpdateTodoCommand command) {
+        requireTodoList(command.todoListId());
+        String nextTitle = command.title() == null ? null : TodoTitles.requireTodoTitle(command.title());
+        return todoRepository.patch(command.todoListId(), command.id(), new TodoPatch(nextTitle, command.completed()))
+                .orElseThrow(() -> new TodoNotFoundException(command.id()));
     }
 
     public void delete(UUID todoListId, UUID id) {
@@ -60,12 +60,5 @@ public class TodoService {
         if (todoListRepository.findById(todoListId).isEmpty()) {
             throw new TodoListNotFoundException(todoListId);
         }
-    }
-
-    private static String normalizeTitle(String title) {
-        if (title == null || title.trim().isEmpty()) {
-            throw new InvalidTodoException("Todo title must not be empty");
-        }
-        return title.trim();
     }
 }
