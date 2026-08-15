@@ -90,3 +90,29 @@ Backend `mvn verify` also runs the pragmatic code-quality gates:
 The full sweep prints backend coverage in its result table, prints backend metric report links below the table, copies backend quality reports into the backend suite artifacts under `test-results/full-sweep/`, and records named report links in each backend suite summary's `metric_references` field.
 
 The frontend coverage report is generated under `frontend/coverage/todo-frontend/`. The full sweep prints the coverage percentages in its result table, records them in `latest-summary.json` and the `frontend-unit` suite summary, and copies the HTML report into the corresponding suite artifacts under `test-results/full-sweep/`.
+
+## GitHub CI
+
+Local parity for GitHub CI is still:
+
+```bash
+./scripts/full-test-sweep.sh
+```
+
+The `CI` workflow runs that Docker-first full sweep for pull requests to `main`, pushes to `main`, and manual dispatches. It uploads `test-results/full-sweep/` as the `full-sweep-results` artifact with a 3-day retention window even when the sweep fails, then removes Compose containers, volumes, and orphans.
+
+The `Dependency Review` workflow runs only for pull requests to `main` and fails when dependency changes introduce new `high` or `critical` vulnerabilities. It intentionally uses `pull_request`, not `pull_request_target`, so pull request code does not receive privileged tokens.
+
+Required repository settings:
+
+- Protect `main`.
+- Require a pull request before merge.
+- Require branches to be up to date before merge.
+- Require the `CI` status check.
+- Require the `Dependency Review` status check after the workflow has run successfully at least once and GitHub exposes it as selectable.
+- Block force pushes and branch deletion.
+- Enable the dependency graph.
+- Enable Dependabot alerts and Dependabot security updates.
+- Enable secret scanning and push protection where available for the repository plan and visibility.
+
+If dependency review is unavailable because the repository is private and does not have the required GitHub Advanced Security capability, keep Dependabot and `CI` required and record `Dependency Review` as blocked by repository licensing.
