@@ -4,7 +4,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
-import com.dotega.todo.common.domain.InvalidTodoException;
+import com.dotega.todo.common.domain.TodoTitles;
 import com.dotega.todo.todolists.domain.TodoList;
 import org.springframework.stereotype.Service;
 
@@ -28,14 +28,14 @@ public class TodoListService {
     }
 
     public TodoList create(String title) {
-        String normalizedTitle = normalizeTitle(title);
+        String normalizedTitle = TodoTitles.requireTodoListTitle(title);
         TodoList list = new TodoList(UUID.randomUUID(), normalizedTitle);
         todoListRepository.create(list);
         return list;
     }
 
     public TodoList update(UUID id, String title) {
-        String normalizedTitle = normalizeTitle(title);
+        String normalizedTitle = TodoTitles.requireTodoListTitle(title);
         return todoListRepository.patch(id, normalizedTitle)
                 .orElseThrow(() -> new TodoListNotFoundException(id));
     }
@@ -44,12 +44,5 @@ public class TodoListService {
         if (!todoListRepository.delete(id)) {
             throw new TodoListNotFoundException(id);
         }
-    }
-
-    private static String normalizeTitle(String title) {
-        if (title == null || title.trim().isEmpty()) {
-            throw new InvalidTodoException("Todo list title must not be empty");
-        }
-        return title.trim();
     }
 }

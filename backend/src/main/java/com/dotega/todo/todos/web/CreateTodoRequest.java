@@ -1,4 +1,6 @@
 package com.dotega.todo.todos.web;
 
-public record CreateTodoRequest(String title) {
+import jakarta.validation.constraints.NotBlank;
+
+public record CreateTodoRequest(@NotBlank(message = "Todo title must not be empty") String title) {
 }

@@ -1,4 +1,9 @@
 package com.dotega.todo.todos.web;
 
-public record UpdateTodoRequest(String title, Boolean completed) {
+import jakarta.validation.constraints.Pattern;
+
+public record UpdateTodoRequest(
+        @Pattern(regexp = ".*\\S.*", message = "Todo title must not be empty") String title,
+        Boolean completed
+) {
 }

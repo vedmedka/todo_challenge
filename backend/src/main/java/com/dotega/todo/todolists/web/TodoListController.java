@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import com.dotega.todo.todolists.application.TodoListService;
 import com.dotega.todo.todolists.domain.TodoList;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,13 +32,13 @@ public class TodoListController {
     }
 
     @PostMapping
-    public ResponseEntity<TodoList> createTodoList(@RequestBody CreateTodoListRequest request) {
+    public ResponseEntity<TodoList> createTodoList(@Valid @RequestBody(required = false) CreateTodoListRequest request) {
         TodoList created = todoListService.create(request == null ? null : request.title());
         return ResponseEntity.created(URI.create("/api/todo-lists/" + created.id())).body(created);
     }
 
     @PatchMapping("/{listId}")
-    public TodoList updateTodoList(@PathVariable UUID listId, @RequestBody UpdateTodoListRequest request) {
+    public TodoList updateTodoList(@PathVariable UUID listId, @Valid @RequestBody(required = false) UpdateTodoListRequest request) {
         return todoListService.update(listId, request == null ? null : request.title());
     }
 
