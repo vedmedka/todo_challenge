@@ -3,6 +3,7 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: /frontend
+    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -12,6 +13,7 @@ updates:
 
   - package-ecosystem: maven
     directory: /backend
+    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -21,6 +23,7 @@ updates:
 
   - package-ecosystem: docker
     directory: /backend
+    target-branch: develop
     schedule:
       interval: weekly
       day: tuesday
@@ -30,6 +33,7 @@ updates:
 
   - package-ecosystem: docker
     directory: /frontend
+    target-branch: develop
     schedule:
       interval: weekly
       day: tuesday
@@ -39,6 +43,7 @@ updates:
 
   - package-ecosystem: docker-compose
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
       day: tuesday
@@ -48,6 +53,7 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
       day: wednesday
