@@ -80,4 +80,13 @@ docker compose exec -T frontend npm run e2e
 
 These commands verify the Spring Boot backend, Angular ESLint, Angular unit tests with coverage, and Playwright e2e tests.
 
+Backend `mvn verify` also runs the pragmatic code-quality gates:
+
+- JaCoCo line/instruction and branch coverage checks, with the HTML report under `backend/target/site/jacoco/`.
+- ArchUnit package-boundary tests for domain, application, web, and persistence dependencies.
+- SpotBugs static bug detection, with XML output at `backend/target/spotbugsXml.xml`.
+- PIT mutation testing for the application/domain slice, with reports under `backend/target/pit-reports/`.
+
+The full sweep prints backend coverage in its result table, prints backend metric report links below the table, copies backend quality reports into the backend suite artifacts under `test-results/full-sweep/`, and records named report links in each backend suite summary's `metric_references` field.
+
 The frontend coverage report is generated under `frontend/coverage/todo-frontend/`. The full sweep prints the coverage percentages in its result table, records them in `latest-summary.json` and the `frontend-unit` suite summary, and copies the HTML report into the corresponding suite artifacts under `test-results/full-sweep/`.

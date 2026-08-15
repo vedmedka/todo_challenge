@@ -26,6 +26,7 @@ suite_logs=()
 suite_summaries=()
 suite_artifacts=()
 suite_coverages=()
+suite_metric_references=()
 
 json_escape() {
   local value="$1"
@@ -59,6 +60,9 @@ copy_artifact_dir() {
 clear_source_results() {
   rm -rf \
     "$ROOT_DIR/backend/target/surefire-reports" \
+    "$ROOT_DIR/backend/target/site/jacoco" \
+    "$ROOT_DIR/backend/target/pit-reports" \
+    "$ROOT_DIR/backend/target/spotbugsXml.xml" \
     "$ROOT_DIR/frontend/coverage" \
     "$ROOT_DIR/frontend/test-results" \
     "$ROOT_DIR/frontend/playwright-report"
@@ -80,6 +84,73 @@ join_json_strings() {
     done
   fi
   printf ']'
+}
+
+append_metric_reference() {
+  local current="$1"
+  local key="$2"
+  local tool="$3"
+  local report="$4"
+  local description="$5"
+
+  if [[ -z "$report" ]]; then
+    printf '%s' "$current"
+    return
+  fi
+
+  if [[ "$current" != "{" ]]; then
+    current="$current, "
+  fi
+
+  printf '%s"%s": {"tool": "%s", "report": "%s", "description": "%s"}' \
+    "$current" \
+    "$(json_escape "$key")" \
+    "$(json_escape "$tool")" \
+    "$(json_escape "$report")" \
+    "$(json_escape "$description")"
+}
+
+build_backend_metric_references() {
+  local surefire_report="$1"
+  local jacoco_report="$2"
+  local pit_report="$3"
+  local spotbugs_report="$4"
+  local references="{"
+
+  references="$(append_metric_reference "$references" \
+    "backend_architecture_boundaries" \
+    "ArchUnit" \
+    "$surefire_report" \
+    "Architecture boundary tests are included in backend Surefire results.")"
+  references="$(append_metric_reference "$references" \
+    "backend_coverage" \
+    "JaCoCo" \
+    "$jacoco_report" \
+    "Backend instruction, branch, and line coverage report.")"
+  references="$(append_metric_reference "$references" \
+    "backend_mutation_testing" \
+    "PIT" \
+    "$pit_report" \
+    "Application and domain mutation testing report.")"
+  references="$(append_metric_reference "$references" \
+    "backend_static_analysis" \
+    "SpotBugs" \
+    "$spotbugs_report" \
+    "Static analysis findings report.")"
+
+  if [[ "$references" == "{" ]]; then
+    printf 'null'
+    return
+  fi
+
+  printf '%s}' "$references"
+}
+
+metric_reference_report() {
+  local metric_references="$1"
+  local metric_key="$2"
+
+  printf '%s' "$metric_references" | sed -n "s/.*\"$metric_key\": {[^}]*\"report\": \"\\([^\"]*\\)\".*/\\1/p"
 }
 
 extract_coverage_metric() {
@@ -119,15 +190,85 @@ extract_coverage_summary() {
     "$lines"
 }
 
+jacoco_counter_percent() {
+  local xml_path="$1"
+  local counter_type="$2"
+
+  tr '<' '\n' <"$xml_path" | awk -v counter_type="$counter_type" '
+    /^counter / && $0 ~ "type=\"" counter_type "\"" {
+      line = $0
+    }
+    END {
+      if (line == "") {
+        exit 1
+      }
+
+      missed = line
+      covered = line
+      sub(/.*missed="/, "", missed)
+      sub(/".*/, "", missed)
+      sub(/.*covered="/, "", covered)
+      sub(/".*/, "", covered)
+
+      total = missed + covered
+      if (total == 0) {
+        printf "0.00"
+      } else {
+        printf "%.2f", (covered * 100) / total
+      }
+    }
+  '
+}
+
+extract_jacoco_coverage_summary() {
+  local xml_path="$1"
+  local instructions
+  local branches
+  local lines
+
+  if [[ ! -f "$xml_path" ]]; then
+    printf 'null'
+    return
+  fi
+
+  instructions="$(jacoco_counter_percent "$xml_path" "INSTRUCTION")" || {
+    printf 'null'
+    return
+  }
+  branches="$(jacoco_counter_percent "$xml_path" "BRANCH")" || {
+    printf 'null'
+    return
+  }
+  lines="$(jacoco_counter_percent "$xml_path" "LINE")" || {
+    printf 'null'
+    return
+  }
+
+  printf '{"instruction_percent": %s, "branch_percent": %s, "line_percent": %s}' \
+    "$instructions" \
+    "$branches" \
+    "$lines"
+}
+
 format_coverage_for_table() {
   local coverage="$1"
   local statements
   local branches
   local functions
   local lines
+  local instructions
 
   if [[ "$coverage" == "null" || -z "$coverage" ]]; then
     printf '-'
+    return
+  fi
+
+  instructions="$(printf '%s' "$coverage" | sed -n 's/.*"instruction_percent": \([0-9.]*\).*/\1/p')"
+  if [[ -n "$instructions" ]]; then
+    branches="$(printf '%s' "$coverage" | sed -n 's/.*"branch_percent": \([0-9.]*\).*/\1/p')"
+    lines="$(printf '%s' "$coverage" | sed -n 's/.*"line_percent": \([0-9.]*\).*/\1/p')"
+
+    printf 'I:%s%% B:%s%% L:%s%%' "$instructions" "$branches" "$lines"
     return
   fi
 
@@ -149,6 +290,7 @@ record_suite() {
   local summary_path="$7"
   local artifact_paths="$8"
   local coverage="$9"
+  local metric_references="${10}"
 
   suite_names+=("$name")
   suite_commands+=("$command")
@@ -159,6 +301,7 @@ record_suite() {
   suite_summaries+=("$summary_path")
   suite_artifacts+=("$artifact_paths")
   suite_coverages+=("$coverage")
+  suite_metric_references+=("$metric_references")
 }
 
 write_suite_summary() {
@@ -171,6 +314,7 @@ write_suite_summary() {
   local summary_path="$7"
   local artifact_paths="$8"
   local coverage="$9"
+  local metric_references="${10}"
   local summary_file="$ROOT_DIR/$summary_path"
 
   {
@@ -185,7 +329,8 @@ write_suite_summary() {
     printf '  "artifacts": '
     join_json_strings "$artifact_paths"
     printf ',\n'
-    printf '  "coverage": %s\n' "$coverage"
+    printf '  "coverage": %s,\n' "$coverage"
+    printf '  "metric_references": %s\n' "$metric_references"
     printf '}\n'
   } >"$summary_file"
 }
@@ -204,6 +349,11 @@ run_suite() {
   local status
   local artifacts=""
   local coverage="null"
+  local metric_references="null"
+  local surefire_report=""
+  local jacoco_report=""
+  local pit_report=""
+  local spotbugs_report=""
 
   mkdir -p "$artifact_dir" || exit 1
   summary_path="$(relative_path "$suite_dir/summary.json")"
@@ -227,7 +377,35 @@ run_suite() {
     backend)
       if copy_artifact_dir "$ROOT_DIR/backend/target/surefire-reports" "$artifact_dir/surefire-reports"; then
         artifacts="$(relative_path "$artifact_dir/surefire-reports")"
+        surefire_report="$(relative_path "$artifact_dir/surefire-reports")"
       fi
+      coverage="$(extract_jacoco_coverage_summary "$ROOT_DIR/backend/target/site/jacoco/jacoco.xml")"
+      if copy_artifact_dir "$ROOT_DIR/backend/target/site/jacoco" "$artifact_dir/jacoco"; then
+        jacoco_report="$(relative_path "$artifact_dir/jacoco/index.html")"
+        if [[ -n "$artifacts" ]]; then
+          artifacts="$artifacts|$(relative_path "$artifact_dir/jacoco")"
+        else
+          artifacts="$(relative_path "$artifact_dir/jacoco")"
+        fi
+      fi
+      if copy_artifact_dir "$ROOT_DIR/backend/target/pit-reports" "$artifact_dir/pit-reports"; then
+        pit_report="$(relative_path "$artifact_dir/pit-reports/index.html")"
+        if [[ -n "$artifacts" ]]; then
+          artifacts="$artifacts|$(relative_path "$artifact_dir/pit-reports")"
+        else
+          artifacts="$(relative_path "$artifact_dir/pit-reports")"
+        fi
+      fi
+      if [[ -f "$ROOT_DIR/backend/target/spotbugsXml.xml" ]]; then
+        cp "$ROOT_DIR/backend/target/spotbugsXml.xml" "$artifact_dir/spotbugsXml.xml"
+        spotbugs_report="$(relative_path "$artifact_dir/spotbugsXml.xml")"
+        if [[ -n "$artifacts" ]]; then
+          artifacts="$artifacts|$(relative_path "$artifact_dir/spotbugsXml.xml")"
+        else
+          artifacts="$(relative_path "$artifact_dir/spotbugsXml.xml")"
+        fi
+      fi
+      metric_references="$(build_backend_metric_references "$surefire_report" "$jacoco_report" "$pit_report" "$spotbugs_report")"
       ;;
     frontend-unit)
       if copy_artifact_dir "$ROOT_DIR/frontend/coverage" "$artifact_dir/coverage"; then
@@ -253,8 +431,8 @@ run_suite() {
   local duration
   relative_log_path="$(relative_path "$log_path")"
   duration="$((finished - started))"
-  write_suite_summary "$name" "$command" "$status" "$exit_code" "$duration" "$relative_log_path" "$summary_path" "$artifacts" "$coverage"
-  record_suite "$name" "$command" "$status" "$exit_code" "$duration" "$relative_log_path" "$summary_path" "$artifacts" "$coverage"
+  write_suite_summary "$name" "$command" "$status" "$exit_code" "$duration" "$relative_log_path" "$summary_path" "$artifacts" "$coverage" "$metric_references"
+  record_suite "$name" "$command" "$status" "$exit_code" "$duration" "$relative_log_path" "$summary_path" "$artifacts" "$coverage" "$metric_references"
 
   if [[ "$exit_code" -eq 0 ]]; then
     printf 'Passed %s.\n' "$name"
@@ -297,7 +475,8 @@ write_summary() {
       printf '      "artifacts": '
       join_json_strings "${suite_artifacts[$index]}"
       printf ',\n'
-      printf '      "coverage": %s\n' "${suite_coverages[$index]}"
+      printf '      "coverage": %s,\n' "${suite_coverages[$index]}"
+      printf '      "metric_references": %s\n' "${suite_metric_references[$index]}"
       printf '    }'
     done
 
@@ -328,6 +507,38 @@ print_human_summary() {
       "$(format_coverage_for_table "${suite_coverages[$index]}")" \
       "${suite_summaries[$index]}"
   done
+
+  for index in "${!suite_names[@]}"; do
+    if [[ "${suite_names[$index]}" != "backend" || "${suite_metric_references[$index]}" == "null" ]]; then
+      continue
+    fi
+
+    local references="${suite_metric_references[$index]}"
+    local architecture_report
+    local coverage_report
+    local mutation_report
+    local static_report
+    architecture_report="$(metric_reference_report "$references" "backend_architecture_boundaries")"
+    coverage_report="$(metric_reference_report "$references" "backend_coverage")"
+    mutation_report="$(metric_reference_report "$references" "backend_mutation_testing")"
+    static_report="$(metric_reference_report "$references" "backend_static_analysis")"
+
+    printf '\n'
+    printf 'Backend metric reports:\n'
+    if [[ -n "$architecture_report" ]]; then
+      printf '  Architecture boundaries (ArchUnit): %s\n' "$architecture_report"
+    fi
+    if [[ -n "$coverage_report" ]]; then
+      printf '  Coverage (JaCoCo): %s\n' "$coverage_report"
+    fi
+    if [[ -n "$mutation_report" ]]; then
+      printf '  Mutation testing (PIT): %s\n' "$mutation_report"
+    fi
+    if [[ -n "$static_report" ]]; then
+      printf '  Static analysis (SpotBugs): %s\n' "$static_report"
+    fi
+    break
+  done
 }
 
 printf 'Preparing Docker Compose services...\n'
@@ -346,11 +557,11 @@ compose_log_path="$(relative_path "$compose_log")"
 compose_summary_path="$(relative_path "$compose_suite_dir/summary.json")"
 
 if [[ "$compose_exit" -ne 0 ]]; then
-  write_suite_summary "docker-compose-up" "docker compose up -d --build --force-recreate" "failed" "$compose_exit" "$compose_duration" "$compose_log_path" "$compose_summary_path" "" "null"
-  record_suite "docker-compose-up" "docker compose up -d --build --force-recreate" "failed" "$compose_exit" "$compose_duration" "$compose_log_path" "$compose_summary_path" "" "null"
+  write_suite_summary "docker-compose-up" "docker compose up -d --build --force-recreate" "failed" "$compose_exit" "$compose_duration" "$compose_log_path" "$compose_summary_path" "" "null" "null"
+  record_suite "docker-compose-up" "docker compose up -d --build --force-recreate" "failed" "$compose_exit" "$compose_duration" "$compose_log_path" "$compose_summary_path" "" "null" "null"
 else
-  write_suite_summary "docker-compose-up" "docker compose up -d --build --force-recreate" "passed" 0 "$compose_duration" "$compose_log_path" "$compose_summary_path" "" "null"
-  record_suite "docker-compose-up" "docker compose up -d --build --force-recreate" "passed" 0 "$compose_duration" "$compose_log_path" "$compose_summary_path" "" "null"
+  write_suite_summary "docker-compose-up" "docker compose up -d --build --force-recreate" "passed" 0 "$compose_duration" "$compose_log_path" "$compose_summary_path" "" "null" "null"
+  record_suite "docker-compose-up" "docker compose up -d --build --force-recreate" "passed" 0 "$compose_duration" "$compose_log_path" "$compose_summary_path" "" "null" "null"
   clear_source_results
   run_suite "backend" docker compose exec -T backend mvn verify
   run_suite "backend-persistence" "$ROOT_DIR/scripts/persistence-smoke.sh"
