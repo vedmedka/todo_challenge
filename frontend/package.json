@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@angular-devkit/build-angular": "21.2.21",
-    "@angular/cli": "21.2.21",
+    "@angular/cli": "22.1.5",
     "@angular/compiler-cli": "21.2.20",
     "@playwright/test": "1.62.1",
     "@types/jasmine": "6.0.0",
