@@ -1,4 +1,4 @@
-FROM maven:3.9.15-eclipse-temurin-26
+FROM maven:3.9-eclipse-temurin-26
 
 ENV MAVEN_OPTS=--sun-misc-unsafe-memory-access=allow
 
